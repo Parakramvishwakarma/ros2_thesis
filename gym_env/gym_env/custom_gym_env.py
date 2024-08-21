@@ -106,10 +106,8 @@ class CustomGymnasiumEnv(gym.Env):
         self.scannerRange = [0.164000004529953, 12.0]
         self.scannerIncrementRads = 0.009817477315664291
 
-
         # Define action and observation space
         self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(2,), dtype=np.float32)
-
         self.observation_space = spaces.Dict({
             'lidar': spaces.Box(low=0, high=12, shape=(640,), dtype=np.float32),
             'linear_velocity': spaces.Box(low=-5, high=5, shape=(1,), dtype=np.float32),
@@ -117,66 +115,14 @@ class CustomGymnasiumEnv(gym.Env):
             'distance_to_target': spaces.Box(low=0, high=np.inf, shape=(1,), dtype=np.float32)
         })
 
-    def _get_distance(self, pose ):
-        delta_x = self.target_pose.position.x - pose.position.x
-        delta_y = self.target_pose.position.y - pose.position.y
-        distance = float((delta_x**2 + delta_y**2) ** 0.5)
-        return distance
-
-    def _calculateReward(self):
-        #the reward is: Reach target (<0.25m) = +20 hit obstacle(<0.25m) = -10
-        # alpha * current linear velocity 
-        # -gamma * 1/distance to closest obstacle
-        # beta * delta of distance to target
-        reward = 0
-        distanceReward = 0
-        obstacleReward = 0
-        speedReward = 0
-        terminalReward = 0
-        
-        #this first case is for reaching the target
-        if (self.newDistanceToTarget <= 0.5):
-            # the reward for reaching the target needs to outweight the penalty for being close to obstacles
-            #this is becase this will ensure that we can reach targets close to obstacles
-            terminalReward = 4.0
-        else:
-            distanceReward = self.beta * self.changeInDistanceToTarget + 0.5 * (1/self.newDistanceToTarget)
-        #this case is for collision
-        if self.closestObstacle < 0.5:  
-            obstacleReward = -3
-        elif self.closestObstacle < 6:
-            obstacleReward = (self.gamma)* (1 / self.closestObstacle) # this means a max pentaly possible is around -0.75
-      
-        #now reward for velocity
-        speedReward = self.alpha * abs(self.currentLinearVelocity)
-
-        reward = round(distanceReward,3) + round(obstacleReward, 3) + round(speedReward, 3) + round(terminalReward,3)
-        # self.subscribeNode.get_logger().info(f"Distance: {distanceReward}, Obstacle {obstacleReward} Speed: {speedReward}")
-        return reward
-
-
-    def _roundLidar(self, original_ranges):
-        original_ranges = np.where(np.isinf(original_ranges), 12, original_ranges)
-        return np.array(original_ranges, dtype=np.float32)
-
-
-    def _debugOutput(self):
-        self.subscribeNode.get_logger().info(f"The current position is {self.currentPose.position.x} {self.currentPose.position.y}")
-        self.subscribeNode.get_logger().info(f"The current velocity is: { self.currentLinearVelocity}")
-        self.subscribeNode.get_logger().info(f"The closest obstacle is at: {self.closestObstacle}")
-        self.subscribeNode.get_logger().info(f"The current distace to the target is: {self.newDistanceToTarget} m")
-        # self.subscribeNode.get_logger().info(f"The the change in distance to target is {self.changeInDistanceToTarget}m")
-
-
+    
     def step(self, action):
-        #the class includes a step counter to keep track of terminal condition
+        #the function includes a step counter to keep track of terminal condition
         self.counter += 1
-        # Placeholder for action application logic
-        # self.subscribeNode.get_logger().info(f'Action taken: {action}')
-
         linear_vel = action[0] * 5.0  
         angular_vel = action[1] * 3.14 
 
+        #send action from the model
         self.publishNode.sendAction(linear_vel, angular_vel)
         rclpy.spin_once(self.publishNode, timeout_sec=1.0)
         
@@ -288,6 +234,58 @@ class CustomGymnasiumEnv(gym.Env):
     def _setNewTarget(self):
         self.target_pose.position.x = float(np.random.randint(-4,14))
         self.target_pose.position.y = float(np.random.randint(-9, 9))
+
+
+    def _get_distance(self, pose ):
+        delta_x = self.target_pose.position.x - pose.position.x
+        delta_y = self.target_pose.position.y - pose.position.y
+        distance = float((delta_x**2 + delta_y**2) ** 0.5)
+        return distance
+
+    def _calculateReward(self):
+        #the reward is: Reach target (<0.25m) = +20 hit obstacle(<0.25m) = -10
+        # alpha * current linear velocity 
+        # -gamma * 1/distance to closest obstacle
+        # beta * delta of distance to target
+        reward = 0
+        distanceReward = 0
+        obstacleReward = 0
+        speedReward = 0
+        terminalReward = 0
+        
+        #this first case is for reaching the target
+        if (self.newDistanceToTarget <= 0.5):
+            # the reward for reaching the target needs to outweight the penalty for being close to obstacles
+            #this is becase this will ensure that we can reach targets close to obstacles
+            terminalReward = 4.0
+        else:
+            distanceReward = self.beta * self.changeInDistanceToTarget + 0.5 * (1/self.newDistanceToTarget)
+        #this case is for collision
+        if self.closestObstacle < 0.5:  
+            obstacleReward = -3
+        elif self.closestObstacle < 6:
+            obstacleReward = (self.gamma)* (1 / self.closestObstacle) # this means a max pentaly possible is around -0.75
+      
+        #now reward for velocity
+        speedReward = self.alpha * abs(self.currentLinearVelocity)
+
+        reward = round(distanceReward,3) + round(obstacleReward, 3) + round(speedReward, 3) + round(terminalReward,3)
+        # self.subscribeNode.get_logger().info(f"Distance: {distanceReward}, Obstacle {obstacleReward} Speed: {speedReward}")
+        return reward
+
+
+    def _roundLidar(self, original_ranges):
+        original_ranges = np.where(np.isinf(original_ranges), 12, original_ranges)
+        return np.array(original_ranges, dtype=np.float32)
+
+
+    def _debugOutput(self):
+        self.subscribeNode.get_logger().info(f"The current position is {self.currentPose.position.x} {self.currentPose.position.y}")
+        self.subscribeNode.get_logger().info(f"The current velocity is: { self.currentLinearVelocity}")
+        self.subscribeNode.get_logger().info(f"The closest obstacle is at: {self.closestObstacle}")
+        self.subscribeNode.get_logger().info(f"The current distace to the target is: {self.newDistanceToTarget} m")
+        # self.subscribeNode.get_logger().info(f"The the change in distance to target is {self.changeInDistanceToTarget}m")
+
 
 
 

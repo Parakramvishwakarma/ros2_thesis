@@ -52,7 +52,6 @@ df = load_results(log_dir)
 # print(f"There are {len(df)} results")
 df.to_csv("./results/DDPG_training_results.csv", index=False)
 print("Training Results Written")
-
 #plot training results
 results_plotter.plot_results([log_dir], 1e5, results_plotter.X_TIMESTEPS, "DDPG Results")
 plot_results(log_dir)
