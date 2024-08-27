@@ -76,7 +76,7 @@ controller_server:
     controller_plugins: ["FollowPath"]
 
     FollowPath:
-      plugin: "nav2_pure_pursuit_controller::PurePursuitController" # In Iron and older versions, "/" was used instead of "::"
+      plugin: "nav2_sac_controller::SACController" # In Iron and older versions, "/" was used instead of "::"
       debug_trajectory_details: True
       desired_linear_vel: 0.2
       lookahead_dist: 0.4
@@ -160,8 +160,6 @@ global_costmap:
         cost_scaling_factor: 3.0
         inflation_radius: 0.8
       always_send_full_costmap: True
-
-
 
 smoother_server:
   ros__parameters:

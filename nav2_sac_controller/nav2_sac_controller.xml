@@ -1,0 +1,7 @@
+<library path="nav2_sac_controller">
+  <class type="nav2_sac_controller::SACController" base_class_type="nav2_core::Controller">
+    <description>
+      This is RL SAC controller
+    </description>
+  </class>
+</library>

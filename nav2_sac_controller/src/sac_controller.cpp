@@ -12,7 +12,7 @@
 
 #include "nav2_core/exceptions.hpp"
 #include "nav2_util/node_utils.hpp"
-#include "nav2_pure_pursuit_controller/pure_pursuit_controller.hpp"
+#include "nav2_sac_controller/sac_controller.hpp"
 #include "nav2_util/geometry_utils.hpp"
 
 using std::hypot;
@@ -22,20 +22,20 @@ using std::abs;
 using nav2_util::declare_parameter_if_not_declared;
 using nav2_util::geometry_utils::euclidean_distance;
 
-namespace nav2_pure_pursuit_controller
+
+namespace nav2_sac_controller
 {
 
-
-PurePursuitController::PurePursuitController()
+SACController::SACController()
 // tf_(nullptr), costmap_(nullptr)
 {
   tf_ = nullptr;
 }
 
-PurePursuitController::~PurePursuitController()
+SACController::~SACController()
 {
   RCLCPP_INFO(
-    logger_, "Destroying plugin of type IarDijkstraPlanner"
+    logger_, "Destroying plugin of type SAC Controller"
   );
 }
 /**
@@ -60,7 +60,7 @@ Iter min_by(Iter begin, Iter end, Getter getCompareVal)
 }
 
 
-void PurePursuitController::configure(
+void SACController::configure(
   const rclcpp_lifecycle::LifecycleNode::WeakPtr & parent,
   std::string name, std::shared_ptr<tf2_ros::Buffer> tf,
   std::shared_ptr<nav2_costmap_2d::Costmap2DROS> costmap_ros)
@@ -93,50 +93,56 @@ void PurePursuitController::configure(
   double transform_tolerance;
   node->get_parameter(plugin_name_ + ".transform_tolerance", transform_tolerance);
   transform_tolerance_ = rclcpp::Duration::from_seconds(transform_tolerance);
+  pose_publisher_ = node->create_publisher<geometry_msgs::msg::PoseStamped>("/test", 10);
   global_pub_ = node->create_publisher<nav_msgs::msg::Path>("received_global_plan", 1);
 
 }
 
-void PurePursuitController::cleanup() 
+void SACController::cleanup() 
 {
   RCLCPP_INFO(
     logger_,
-    "Cleaning up controller: %s of type pure_pursuit_controller::PurePursuitController",
+    "Cleaning up controller: %s of type SAC_controller::SACController",
     plugin_name_.c_str());
   global_pub_.reset();
 }
 
-void PurePursuitController::activate()
+void SACController::activate()
 {
   RCLCPP_INFO(
     logger_,
-    "Activating controller: %s of type pure_pursuit_controller::PurePursuitController",
+    "Activating controller: %s of type SAC_controller::SACController",
     plugin_name_.c_str());
   global_pub_->on_activate();
+  RCLCPP_INFO(
+    logger_,
+    "global publisher is activated");
+
 }
 
-void PurePursuitController::deactivate()
+void SACController::deactivate()
 {
   RCLCPP_INFO(
     logger_,
-    "Deactivating controller: %s of type pure_pursuit_controller::PurePursuitController",
+    "Deactivating controller: %s of type SAC_controller::SACController",
     plugin_name_.c_str());
   global_pub_->on_deactivate();
 }
 
-void PurePursuitController::setSpeedLimit(const double& speed_limit, const bool& percentage)
+void SACController::setSpeedLimit(const double& speed_limit, const bool& percentage)
 {
   (void) speed_limit;
   (void) percentage;
 }
 
-geometry_msgs::msg::TwistStamped PurePursuitController::computeVelocityCommands(
+geometry_msgs::msg::TwistStamped SACController::computeVelocityCommands(
   const geometry_msgs::msg::PoseStamped & pose,
   const geometry_msgs::msg::Twist & velocity,
   nav2_core::GoalChecker * goal_checker)
 {
   (void)velocity;
   (void)goal_checker;
+  pose_publisher_->publish(pose);
 
   auto transformed_plan = transformGlobalPlan(pose);
 
@@ -180,13 +186,13 @@ geometry_msgs::msg::TwistStamped PurePursuitController::computeVelocityCommands(
   return cmd_vel;
 }
 
-void PurePursuitController::setPlan(const nav_msgs::msg::Path & path)
+void SACController::setPlan(const nav_msgs::msg::Path & path)
 {
   global_pub_->publish(path);
   global_plan_ = path;
 }
 nav_msgs::msg::Path
-PurePursuitController::transformGlobalPlan(
+SACController::transformGlobalPlan(
   const geometry_msgs::msg::PoseStamped & pose)
 {
   // Original implementation taken from nav2_dwb_controller
@@ -259,7 +265,7 @@ PurePursuitController::transformGlobalPlan(
   return transformed_plan;
 }
 
-bool PurePursuitController::transformPose(
+bool SACController::transformPose(
   const std::shared_ptr<tf2_ros::Buffer> tf,
   const std::string frame,
   const geometry_msgs::msg::PoseStamped & in_pose,
@@ -317,8 +323,8 @@ bool PurePursuitController::transformPose(
   return false;
 }
 
-}  // namespace nav2_pure_pursuit_controller
+}  // namespace nav2_sac_controller
 
 // Register this controller as a nav2_core plugin
 #include "pluginlib/class_list_macros.hpp"
-PLUGINLIB_EXPORT_CLASS(nav2_pure_pursuit_controller::PurePursuitController, nav2_core::Controller)
+PLUGINLIB_EXPORT_CLASS(nav2_sac_controller::SACController, nav2_core::Controller)
