@@ -79,6 +79,9 @@ protected:
     float & angle
   );
 
+  void actionCallback(const geometry_msgs::msg::Twist::SharedPtr msg); // Callback for the action subscriber
+
+
   // float getspeed();
 
   rclcpp_lifecycle::LifecycleNode::WeakPtr node_;
@@ -98,13 +101,9 @@ protected:
   rclcpp::Duration transform_tolerance_ {0, 0};
   nav_msgs::msg::Path global_plan_;
   std::shared_ptr<rclcpp_lifecycle::LifecyclePublisher<nav_msgs::msg::Path>> global_pub_;
-  // rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr goal_publisher_;
-  // rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr goal_angle_publisher_;
-  // rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr path_angle_publisher_;
   rclcpp::Publisher<example_interfaces::msg::Float64MultiArray>::SharedPtr publisher_;
-
-  // rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr action_subscriber_;
-  // geometry_msgs::msg::TwistStamped last_action_;  // Store the last received action
+  rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr action_subscriber_; // Subscriber for actions
+  geometry_msgs::msg::Twist latest_action_; // Store the most recent action
 
 
 };

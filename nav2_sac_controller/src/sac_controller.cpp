@@ -31,6 +31,7 @@ SACController::SACController()
 // tf_(nullptr), costmap_(nullptr)
 {
   tf_ = nullptr;
+  latest_action_ = geometry_msgs::msg::Twist();
 }
 
 SACController::~SACController()
@@ -99,23 +100,21 @@ void SACController::configure(
   double transform_tolerance;
   node->get_parameter(plugin_name_ + ".transform_tolerance", transform_tolerance);
   transform_tolerance_ = rclcpp::Duration::from_seconds(transform_tolerance);
-  // goal_publisher_ = node->create_publisher<std_msgs::msg::Float64>("/goal_distance", 10);
-  // goal_angle_publisher_ = node->create_publisher<std_msgs::msg::Float64>("/goal_angle", 10);
-  publisher_ = node->create_publisher<example_interfaces::msg::Float64MultiArray>("/observations", 10);
 
-  // action_subscriber_ = node->create_subscription<geometry_msgs::msg::Twist>(
-  //   "/sac_agent_action",
-  //   rclcpp::QoS(10),
-  //   std::bind(&SACController::actionCallback, this, std::placeholders::_1));
+  publisher_ = node->create_publisher<example_interfaces::msg::Float64MultiArray>("/observations", 10);
+  action_subscriber_ = node->create_subscription<geometry_msgs::msg::Twist>(
+    "/action", rclcpp::QoS(10),
+    std::bind(&SACController::actionCallback, this, std::placeholders::_1));
   global_pub_ = node->create_publisher<nav_msgs::msg::Path>("received_global_plan", 1);
 
 }
 
-// void SACController::actionCallback(const geometry_msgs::msg::Twist::SharedPtr msg)
-// {
-//   last_action_ = *msg;  // Store the received action
-// }
-
+void SACController::actionCallback(const geometry_msgs::msg::Twist::SharedPtr msg)
+{
+  // Update the latest action with the received message
+  latest_action_ = *msg;
+  RCLCPP_INFO(logger_, "Received new action: linear.x: %f, angular.z: %f", latest_action_.linear.x, latest_action_.angular.z);
+}
 void SACController::cleanup() 
 {
   RCLCPP_INFO(
@@ -197,33 +196,18 @@ geometry_msgs::msg::TwistStamped SACController::computeVelocityCommands(
   if (goal_pose_it == transformed_plan.poses.end()) {
     goal_pose_it = std::prev(transformed_plan.poses.end());
   }
-  auto goal_pose = goal_pose_it->pose;
 
-  double linear_vel, angular_vel;
+  double linear_vel = latest_action_.linear.x;
+  double angular_vel = latest_action_.angular.z;
 
-  // If the goal pose is in front of the robot then compute the velocity using the pure pursuit
-  // algorithm, else rotate with the max angular velocity until the goal pose is in front of the
-  // robot
-  //this algorith takes the goal pose and calculates the velocity needed to reach it
-  if (goal_pose.position.x > 0) {
-    auto curvature = 2.0 * goal_pose.position.y /
-      (goal_pose.position.x * goal_pose.position.x + goal_pose.position.y * goal_pose.position.y);
-    linear_vel = desired_linear_vel_;
-    angular_vel = desired_linear_vel_ * curvature;
-  } else {
-    linear_vel = 0.0;
-    angular_vel = max_angular_vel_;
-  }
+
 
   // Create and publish a TwistStamped message with the desired velocity
   geometry_msgs::msg::TwistStamped cmd_vel;
   cmd_vel.header.frame_id = pose.header.frame_id;
   cmd_vel.header.stamp = clock_->now();
   cmd_vel.twist.linear.x = linear_vel;
-  cmd_vel.twist.angular.z = max(
-    -1.0 * abs(max_angular_vel_), min(
-      angular_vel, abs(
-        max_angular_vel_)));
+  cmd_vel.twist.angular.z = angular_vel;
 
   return cmd_vel;
 }

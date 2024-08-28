@@ -72,9 +72,9 @@ class Publisher(Node):
         goalPose_pose.pose = pose
         self.publish_goal_pose.publish(goalPose_pose)
 
-class CustomGymnasiumEnv(gym.Env):
+class CustomGymnasiumEnvNav2(gym.Env):
     def __init__(self):
-        super(CustomGymnasiumEnv, self).__init__()
+        super(CustomGymnasiumEnvNav2, self).__init__()
         rclpy.init()
         self.counter = 0
         #inititalise variables
@@ -85,7 +85,7 @@ class CustomGymnasiumEnv(gym.Env):
         self.newDistanceToTarget = None
         self.changeInDistanceToTarget = 0
         self.closestObstacle = None
-        self.reward = None
+        self.reward = 0
 
         #define the subcriber and publisher nodes
         self.subscribeNode = Subscriber()
@@ -148,7 +148,8 @@ class CustomGymnasiumEnv(gym.Env):
                 'path_angle': np.array([self.pathAngle], dtype=np.float32),
                 'distance_to_target': np.array([self.newDistanceToTarget], dtype=np.float32)
             }
-            reward = self._calculateReward()
+            self._calculateReward()
+            reward = self.reward
             terminated = self.newDistanceToTarget < 0.5
             truncated = self.counter >= 2000
         else:
