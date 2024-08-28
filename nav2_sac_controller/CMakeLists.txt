@@ -17,6 +17,7 @@ find_package(visualization_msgs REQUIRED)
 find_package(nav2_util REQUIRED)
 find_package(nav2_core REQUIRED)
 find_package(nav2_msgs REQUIRED)
+find_package(example_interfaces REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(builtin_interfaces REQUIRED)
@@ -41,6 +42,7 @@ ament_target_dependencies(
   "rclcpp_lifecycle"
   "nav2_common"
   "std_msgs"
+  "example_interfaces"
   "visualization_msgs"
   "nav2_util"
   "nav2_core"

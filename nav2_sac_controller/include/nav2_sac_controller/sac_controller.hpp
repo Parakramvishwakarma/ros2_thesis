@@ -21,17 +21,14 @@
 #include "geometry_msgs/msg/twist_stamped.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
 #include "std_msgs/msg/float64.hpp"
+#include "example_interfaces/msg/float64_multi_array.hpp"
 #include "nav_msgs/msg/path.hpp"
 #include "tf2_ros/buffer.h"
 #include "nav2_costmap_2d/costmap_2d_ros.hpp"
 
 
-
-
-
 namespace nav2_sac_controller
 {
-
 
 class SACController : public nav2_core::Controller
 {
@@ -73,13 +70,13 @@ protected:
 // hence in this function we will convert the odom frame pose to global plan and file last pose and the distance to it
   bool eucledianDistanceToGoal(
     const geometry_msgs::msg::PoseStamped & in_pose,
-    std_msgs::msg::Float64 & distance
+    float & distance
   );
 
   bool findAngle(
     const geometry_msgs::msg::PoseStamped & in_pose,
     const geometry_msgs::msg::PoseStamped & ref_pose,
-    std_msgs::msg::Float64 & angle
+    float & angle
   );
 
   // float getspeed();
@@ -96,15 +93,20 @@ protected:
   double lookahead_dist_;
   double max_angular_vel_;
   int offset_from_furtherest_;
+  example_interfaces::msg::Float64MultiArray obeservationArray_;
 
   rclcpp::Duration transform_tolerance_ {0, 0};
   nav_msgs::msg::Path global_plan_;
   std::shared_ptr<rclcpp_lifecycle::LifecyclePublisher<nav_msgs::msg::Path>> global_pub_;
-  rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr goal_publisher_;
-  rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr goal_angle_publisher_;
-  rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr path_angle_publisher_;
+  // rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr goal_publisher_;
+  // rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr goal_angle_publisher_;
+  // rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr path_angle_publisher_;
+  rclcpp::Publisher<example_interfaces::msg::Float64MultiArray>::SharedPtr publisher_;
+
   // rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr action_subscriber_;
   // geometry_msgs::msg::TwistStamped last_action_;  // Store the last received action
+
+
 };
 
 }  // namespace nav2_SAC_controller

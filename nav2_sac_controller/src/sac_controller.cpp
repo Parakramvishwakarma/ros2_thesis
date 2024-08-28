@@ -89,7 +89,7 @@ void SACController::configure(
       0.1));
   declare_parameter_if_not_declared(
     node, plugin_name_ + ".offset_from_furthest",
-    rclcpp::ParameterValue(20));
+    rclcpp::ParameterValue(40));
 
 
   node->get_parameter(plugin_name_ + ".desired_linear_vel", desired_linear_vel_);
@@ -99,9 +99,9 @@ void SACController::configure(
   double transform_tolerance;
   node->get_parameter(plugin_name_ + ".transform_tolerance", transform_tolerance);
   transform_tolerance_ = rclcpp::Duration::from_seconds(transform_tolerance);
-  goal_publisher_ = node->create_publisher<std_msgs::msg::Float64>("/goal_distance", 10);
-  goal_angle_publisher_ = node->create_publisher<std_msgs::msg::Float64>("/goal_angle", 10);
-  path_angle_publisher_ = node->create_publisher<std_msgs::msg::Float64>("/path_angle", 10);
+  // goal_publisher_ = node->create_publisher<std_msgs::msg::Float64>("/goal_distance", 10);
+  // goal_angle_publisher_ = node->create_publisher<std_msgs::msg::Float64>("/goal_angle", 10);
+  publisher_ = node->create_publisher<example_interfaces::msg::Float64MultiArray>("/observations", 10);
 
   // action_subscriber_ = node->create_subscription<geometry_msgs::msg::Twist>(
   //   "/sac_agent_action",
@@ -164,25 +164,28 @@ geometry_msgs::msg::TwistStamped SACController::computeVelocityCommands(
   //put the robot_pose in the wider scope so no repitition
   //here we are simply converting the robot pose into the frame of the global plan which is "map"
   geometry_msgs::msg::PoseStamped robot_pose;
-  std_msgs::msg::Float64 distance;
-  std_msgs::msg::Float64 goal_angle;
-  std_msgs::msg::Float64 path_angle;
-  geometry_msgs::msg::PoseStamped path_reference_pose = global_plan_.poses[offset_from_furtherest_];
-  //this variable is static and does not change, maybe I will amke it constnat
   geometry_msgs::msg::PoseStamped goalPose = global_plan_.poses.back();
+  float distance;
+  float goal_angle;
+  float path_angle;
 
   auto transformed_plan = transformGlobalPlan(pose, robot_pose);
+
+  geometry_msgs::msg::PoseStamped path_reference_pose = global_plan_.poses[offset_from_furtherest_];
+
  
-  //find distance to the goal
+  //find observations
   if (!eucledianDistanceToGoal(robot_pose, distance) 
     || !findAngle(robot_pose, path_reference_pose, path_angle)
     ||!findAngle(robot_pose, goalPose, goal_angle) ){
-    throw nav2_core::PlannerException("Unable to calculate state");
+    throw nav2_core::PlannerException("Unable to calculate state"); 
   }
-
-  goal_publisher_->publish(distance);
-  goal_angle_publisher_->publish(goal_angle);
-  path_angle_publisher_->publish(path_angle);
+  float weights[3] = {1.0f, 2.0f, 1.0f};
+  float reward = utils::claculateRewards(goal_angle, path_angle, distance, weights);
+  float observations[4] = {goal_angle, path_angle, distance, reward};
+  std::vector<double> observations_vector(observations, observations + 4);
+  obeservationArray_.data = observations_vector;
+  publisher_->publish(obeservationArray_);
 
   // Find the first pose which is at a distance greater than the specified lookahed distance
   auto goal_pose_it = std::find_if(
@@ -226,10 +229,10 @@ geometry_msgs::msg::TwistStamped SACController::computeVelocityCommands(
 }
 
 
-bool SACController::eucledianDistanceToGoal(const geometry_msgs::msg::PoseStamped & robot_pose, std_msgs::msg::Float64 & distance)
+bool SACController::eucledianDistanceToGoal(const geometry_msgs::msg::PoseStamped & robot_pose, float & distance)
 {
   if (global_plan_.poses.empty()) {
-    distance.data = 0.00;
+    distance = 0.00;
     return true;
   }
   geometry_msgs::msg::PoseStamped goal_pose = global_plan_.poses.back();
@@ -238,16 +241,16 @@ bool SACController::eucledianDistanceToGoal(const geometry_msgs::msg::PoseStampe
     throw nav2_core::PlannerException("Trying to calculate the distance but input pose is not in global plan frame");
     return false;
   }
-  distance.data = euclidean_distance(robot_pose, goal_pose);
+  distance = euclidean_distance(robot_pose, goal_pose);
   return true;
 }
 
-bool SACController::findAngle(const geometry_msgs::msg::PoseStamped & robot_pose, const geometry_msgs::msg::PoseStamped & ref_pose, std_msgs::msg::Float64 & angle){
+bool SACController::findAngle(const geometry_msgs::msg::PoseStamped & robot_pose, const geometry_msgs::msg::PoseStamped & ref_pose, float & angle){
   if (global_plan_.poses.empty()) {
-    angle.data = 0.00;
+    angle = 0.00;
     return true;
   }
-  angle.data = utils::posePointAngle(robot_pose.pose, ref_pose.pose, true);
+  angle = utils::posePointAngle(robot_pose.pose, ref_pose.pose, true);
   return true;
 }
 
