@@ -20,9 +20,11 @@
 #include "pluginlib/class_list_macros.hpp"
 #include "geometry_msgs/msg/twist_stamped.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
+#include "std_msgs/msg/float64.hpp"
 #include "nav_msgs/msg/path.hpp"
 #include "tf2_ros/buffer.h"
 #include "nav2_costmap_2d/costmap_2d_ros.hpp"
+
 
 
 
@@ -55,7 +57,9 @@ public:
   void setPlan(const nav_msgs::msg::Path & path) override;
 
 protected:
-  nav_msgs::msg::Path transformGlobalPlan(const geometry_msgs::msg::PoseStamped & pose);
+  nav_msgs::msg::Path transformGlobalPlan(
+    const geometry_msgs::msg::PoseStamped & pose,
+     geometry_msgs::msg::PoseStamped & robot_pose);
 
   bool transformPose(
     const std::shared_ptr<tf2_ros::Buffer> tf,
@@ -64,6 +68,21 @@ protected:
     geometry_msgs::msg::PoseStamped & out_pose,
     const rclcpp::Duration & transform_tolerance
   ) const;
+
+//goal pose will just be the end of the global_plan
+// hence in this function we will convert the odom frame pose to global plan and file last pose and the distance to it
+  bool eucledianDistanceToGoal(
+    const geometry_msgs::msg::PoseStamped & in_pose,
+    std_msgs::msg::Float64 & distance
+  );
+
+  bool findAngle(
+    const geometry_msgs::msg::PoseStamped & in_pose,
+    const geometry_msgs::msg::PoseStamped & ref_pose,
+    std_msgs::msg::Float64 & angle
+  );
+
+  // float getspeed();
 
   rclcpp_lifecycle::LifecycleNode::WeakPtr node_;
   std::shared_ptr<tf2_ros::Buffer> tf_;
@@ -76,11 +95,16 @@ protected:
   double desired_linear_vel_;
   double lookahead_dist_;
   double max_angular_vel_;
-  rclcpp::Duration transform_tolerance_ {0, 0};
+  int offset_from_furtherest_;
 
+  rclcpp::Duration transform_tolerance_ {0, 0};
   nav_msgs::msg::Path global_plan_;
   std::shared_ptr<rclcpp_lifecycle::LifecyclePublisher<nav_msgs::msg::Path>> global_pub_;
-  rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr pose_publisher_;
+  rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr goal_publisher_;
+  rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr goal_angle_publisher_;
+  rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr path_angle_publisher_;
+  // rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr action_subscriber_;
+  // geometry_msgs::msg::TwistStamped last_action_;  // Store the last received action
 };
 
 }  // namespace nav2_SAC_controller

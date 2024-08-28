@@ -13,6 +13,7 @@
 #include "nav2_core/exceptions.hpp"
 #include "nav2_util/node_utils.hpp"
 #include "nav2_sac_controller/sac_controller.hpp"
+#include "nav2_sac_controller/utils.hpp"
 #include "nav2_util/geometry_utils.hpp"
 
 using std::hypot;
@@ -86,17 +87,34 @@ void SACController::configure(
   declare_parameter_if_not_declared(
     node, plugin_name_ + ".transform_tolerance", rclcpp::ParameterValue(
       0.1));
+  declare_parameter_if_not_declared(
+    node, plugin_name_ + ".offset_from_furthest",
+    rclcpp::ParameterValue(20));
+
 
   node->get_parameter(plugin_name_ + ".desired_linear_vel", desired_linear_vel_);
+  node->get_parameter(plugin_name_ + ".offset_from_furthest", offset_from_furtherest_);
   node->get_parameter(plugin_name_ + ".lookahead_dist", lookahead_dist_);
   node->get_parameter(plugin_name_ + ".max_angular_vel", max_angular_vel_);
   double transform_tolerance;
   node->get_parameter(plugin_name_ + ".transform_tolerance", transform_tolerance);
   transform_tolerance_ = rclcpp::Duration::from_seconds(transform_tolerance);
-  pose_publisher_ = node->create_publisher<geometry_msgs::msg::PoseStamped>("/test", 10);
+  goal_publisher_ = node->create_publisher<std_msgs::msg::Float64>("/goal_distance", 10);
+  goal_angle_publisher_ = node->create_publisher<std_msgs::msg::Float64>("/goal_angle", 10);
+  path_angle_publisher_ = node->create_publisher<std_msgs::msg::Float64>("/path_angle", 10);
+
+  // action_subscriber_ = node->create_subscription<geometry_msgs::msg::Twist>(
+  //   "/sac_agent_action",
+  //   rclcpp::QoS(10),
+  //   std::bind(&SACController::actionCallback, this, std::placeholders::_1));
   global_pub_ = node->create_publisher<nav_msgs::msg::Path>("received_global_plan", 1);
 
 }
+
+// void SACController::actionCallback(const geometry_msgs::msg::Twist::SharedPtr msg)
+// {
+//   last_action_ = *msg;  // Store the received action
+// }
 
 void SACController::cleanup() 
 {
@@ -142,9 +160,29 @@ geometry_msgs::msg::TwistStamped SACController::computeVelocityCommands(
 {
   (void)velocity;
   (void)goal_checker;
-  pose_publisher_->publish(pose);
 
-  auto transformed_plan = transformGlobalPlan(pose);
+  //put the robot_pose in the wider scope so no repitition
+  //here we are simply converting the robot pose into the frame of the global plan which is "map"
+  geometry_msgs::msg::PoseStamped robot_pose;
+  std_msgs::msg::Float64 distance;
+  std_msgs::msg::Float64 goal_angle;
+  std_msgs::msg::Float64 path_angle;
+  geometry_msgs::msg::PoseStamped path_reference_pose = global_plan_.poses[offset_from_furtherest_];
+  //this variable is static and does not change, maybe I will amke it constnat
+  geometry_msgs::msg::PoseStamped goalPose = global_plan_.poses.back();
+
+  auto transformed_plan = transformGlobalPlan(pose, robot_pose);
+ 
+  //find distance to the goal
+  if (!eucledianDistanceToGoal(robot_pose, distance) 
+    || !findAngle(robot_pose, path_reference_pose, path_angle)
+    ||!findAngle(robot_pose, goalPose, goal_angle) ){
+    throw nav2_core::PlannerException("Unable to calculate state");
+  }
+
+  goal_publisher_->publish(distance);
+  goal_angle_publisher_->publish(goal_angle);
+  path_angle_publisher_->publish(path_angle);
 
   // Find the first pose which is at a distance greater than the specified lookahed distance
   auto goal_pose_it = std::find_if(
@@ -163,6 +201,7 @@ geometry_msgs::msg::TwistStamped SACController::computeVelocityCommands(
   // If the goal pose is in front of the robot then compute the velocity using the pure pursuit
   // algorithm, else rotate with the max angular velocity until the goal pose is in front of the
   // robot
+  //this algorith takes the goal pose and calculates the velocity needed to reach it
   if (goal_pose.position.x > 0) {
     auto curvature = 2.0 * goal_pose.position.y /
       (goal_pose.position.x * goal_pose.position.x + goal_pose.position.y * goal_pose.position.y);
@@ -186,14 +225,42 @@ geometry_msgs::msg::TwistStamped SACController::computeVelocityCommands(
   return cmd_vel;
 }
 
+
+bool SACController::eucledianDistanceToGoal(const geometry_msgs::msg::PoseStamped & robot_pose, std_msgs::msg::Float64 & distance)
+{
+  if (global_plan_.poses.empty()) {
+    distance.data = 0.00;
+    return true;
+  }
+  geometry_msgs::msg::PoseStamped goal_pose = global_plan_.poses.back();
+
+  if (robot_pose.header.frame_id != global_plan_.header.frame_id) {
+    throw nav2_core::PlannerException("Trying to calculate the distance but input pose is not in global plan frame");
+    return false;
+  }
+  distance.data = euclidean_distance(robot_pose, goal_pose);
+  return true;
+}
+
+bool SACController::findAngle(const geometry_msgs::msg::PoseStamped & robot_pose, const geometry_msgs::msg::PoseStamped & ref_pose, std_msgs::msg::Float64 & angle){
+  if (global_plan_.poses.empty()) {
+    angle.data = 0.00;
+    return true;
+  }
+  angle.data = utils::posePointAngle(robot_pose.pose, ref_pose.pose, true);
+  return true;
+}
+
 void SACController::setPlan(const nav_msgs::msg::Path & path)
 {
   global_pub_->publish(path);
   global_plan_ = path;
 }
+
 nav_msgs::msg::Path
 SACController::transformGlobalPlan(
-  const geometry_msgs::msg::PoseStamped & pose)
+  const geometry_msgs::msg::PoseStamped & pose,
+  geometry_msgs::msg::PoseStamped & robot_pose)
 {
   // Original implementation taken from nav2_dwb_controller
 
@@ -202,14 +269,12 @@ SACController::transformGlobalPlan(
   }
 
   // Let's get the pose of the robot in the frame of the plan
-  geometry_msgs::msg::PoseStamped robot_pose;
   if (!transformPose(
       tf_, global_plan_.header.frame_id, pose,
       robot_pose, transform_tolerance_))
   {
     throw nav2_core::PlannerException("Unable to transform robot pose into global plan's frame");
   }
-
   // We'll discard points on the plan that are outside the local costmap
   nav2_costmap_2d::Costmap2D * costmap = costmap_ros_->getCostmap();
   double dist_threshold = std::max(costmap->getSizeInCellsX(), costmap->getSizeInCellsY()) *
@@ -273,7 +338,6 @@ bool SACController::transformPose(
   const rclcpp::Duration & transform_tolerance
 ) const
 {
-  // Implementation taken as is from nav_2d_utils in nav2_dwb_controller
 
   if (in_pose.header.frame_id == frame) {
     out_pose = in_pose;

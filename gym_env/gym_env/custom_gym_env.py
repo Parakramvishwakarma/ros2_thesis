@@ -147,7 +147,7 @@ class CustomGymnasiumEnv(gym.Env):
             if (self.lastDistanceToTarget):
                 self.changeInDistanceToTarget = self.lastDistanceToTarget - self.newDistanceToTarget
                 # self.subscribeNode.get_logger().info(f"The change in distance: {self.changeInDistanceToTarget}")
-            self.lastDistanceToTarget = self.newDistanceToTarget
+            self.lastDistanceToTarget = self.newDistanceToTarget 
 
             self.closestObstacle = min(scan_data.ranges)  #find the closest obstacle
             # self._debugOutput()   #log for debug
@@ -160,6 +160,9 @@ class CustomGymnasiumEnv(gym.Env):
                 'linear_velocity': np.array([self.currentLinearVelocity], dtype=np.float32),
                 'angular_velocity': np.array([self.currentAngularVelocity], dtype=np.float32),
                 'distance_to_target': np.array([self.newDistanceToTarget], dtype=np.float32)
+            #deviation from path
+            #heading to goal
+            #closest distance to target
             }
 
             reward = self._calculateReward()

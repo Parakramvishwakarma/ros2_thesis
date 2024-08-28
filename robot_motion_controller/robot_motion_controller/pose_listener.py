@@ -11,27 +11,20 @@ class PoseListener(Node):
     def __init__(self):
         super().__init__("pose_listener")
         self.pose_sub = self.create_subscription(PoseStamped, '/test', self.currentPoseCallback, 10)
-        self.costMapSub = self.create_subscription(PoseStamped, '/costmap', self.costmapCallback, 10)
+        self.costMapSub = self.create_subscription(PoseStamped, '/amcl_pose', self.costmapCallback, 10)
+        self.dic = {"type": [], "x": [], "y": []}
+
     
     def currentPoseCallback(self, msg: PoseStamped):
         position = msg.pose.position
-        
-
-    def pose_callback(self, msg: PoseWithCovarianceStamped):
-        position = msg.pose.pose.position
         self.dic["type"].append("position")
         self.dic["x"].append(position.x)
         self.dic["y"].append(position.y)
         if self.dic["type"]:  # Check if there's any data to write
             df = pd.DataFrame(self.dic)
-            df.to_csv("/home/parakram/tut_ws/src/robot_motion_controller/robot_motion_controller/csv/test.csv", index=False)
+            df.to_csv("/home/parakram/tut_ws/src/robot_motion_controller/robot_motion_controller/csv/posetest.csv", index=False)
             self.get_logger().info("CSV WRITTEN")
 
-    # def timer_callback(self):
-    #     if self.dic["type"]:  # Check if there's any data to write
-    #         df = pd.DataFrame(self.dic)
-    #         df.to_csv("/home/parakram/tut_ws/src/robot_motion_controller/robot_motion_controller/csv/test.csv", index=False)
-    #         self.get_logger().info("CSV WRITTEN")
 
 # The code below should be left as is
 def main(args=None):

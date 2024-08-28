@@ -22,6 +22,7 @@ setup(
         'console_scripts': [
             'person_follower = robot_motion_controller.person_follower:main',
             'graph_path = robot_motion_controller.graph_path:main',
+            'pose_listener = robot_motion_controller.pose_listener:main',
         ],
     },
 )
