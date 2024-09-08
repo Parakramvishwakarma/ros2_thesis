@@ -43,8 +43,8 @@ def generate_launch_description():
 
     ignition_gazebo = IncludeLaunchDescription(
         PythonLaunchDescriptionSource([os.path.join(pkg_ros_gz_sim, 'launch', 'gz_sim.launch.py')]),
-        # launch_arguments=[('gz_args', [LaunchConfiguration('world'), '.sdf',' -v 4 -s -r --headless-rendering'])]
-        launch_arguments=[('gz_args', [LaunchConfiguration('world'), '.sdf',' -v 4'])]
+        launch_arguments=[('gz_args', [LaunchConfiguration('world'), '.sdf',' -v 4 -s -r --headless-rendering'])]
+        # launch_arguments=[('gz_args', [LaunchConfiguration('world'), '.sdf',' -v 4'])]
 
     )
 

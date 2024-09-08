@@ -32,6 +32,8 @@ SACController::SACController()
 {
   tf_ = nullptr;
   latest_action_ = geometry_msgs::msg::Twist();
+  current_distance_to_target_ = -1;
+  last_distance_to_target_ = -1;
 }
 
 SACController::~SACController()
@@ -69,6 +71,7 @@ void SACController::configure(
 {
   node_ = parent;
   auto node = node_.lock();
+  double transform_tolerance;
 
   costmap_ros_ = costmap_ros;
   tf_ = tf;
@@ -92,21 +95,18 @@ void SACController::configure(
     node, plugin_name_ + ".offset_from_furthest",
     rclcpp::ParameterValue(40));
 
-
   node->get_parameter(plugin_name_ + ".desired_linear_vel", desired_linear_vel_);
   node->get_parameter(plugin_name_ + ".offset_from_furthest", offset_from_furtherest_);
   node->get_parameter(plugin_name_ + ".lookahead_dist", lookahead_dist_);
   node->get_parameter(plugin_name_ + ".max_angular_vel", max_angular_vel_);
-  double transform_tolerance;
   node->get_parameter(plugin_name_ + ".transform_tolerance", transform_tolerance);
   transform_tolerance_ = rclcpp::Duration::from_seconds(transform_tolerance);
 
-  publisher_ = node->create_publisher<example_interfaces::msg::Float64MultiArray>("/observations", 10);
+  publisher_ = node->create_publisher<custom_interfaces::msg::Observations>("/observations", 10);
   action_subscriber_ = node->create_subscription<geometry_msgs::msg::Twist>(
     "/action", rclcpp::QoS(10),
     std::bind(&SACController::actionCallback, this, std::placeholders::_1));
   global_pub_ = node->create_publisher<nav_msgs::msg::Path>("received_global_plan", 1);
-
 }
 
 void SACController::actionCallback(const geometry_msgs::msg::Twist::SharedPtr msg)
@@ -134,7 +134,6 @@ void SACController::activate()
   RCLCPP_INFO(
     logger_,
     "global publisher is activated");
-
 }
 
 void SACController::deactivate()
@@ -157,50 +156,58 @@ geometry_msgs::msg::TwistStamped SACController::computeVelocityCommands(
   const geometry_msgs::msg::Twist & velocity,
   nav2_core::GoalChecker * goal_checker)
 {
-  (void)velocity;
   (void)goal_checker;
 
   //put the robot_pose in the wider scope so no repitition
   //here we are simply converting the robot pose into the frame of the global plan which is "map"
   geometry_msgs::msg::PoseStamped robot_pose;
   geometry_msgs::msg::PoseStamped goalPose = global_plan_.poses.back();
-  float distance;
-  float goal_angle;
-  float path_angle;
-
-  auto transformed_plan = transformGlobalPlan(pose, robot_pose);
-
   geometry_msgs::msg::PoseStamped path_reference_pose = global_plan_.poses[offset_from_furtherest_];
 
+  float goal_angle;
+  float path_angle;
+  float change_in_distance_to_target;
+
+  custom_interfaces::msg::Observations observation;
+  
+  auto transformed_plan = transformGlobalPlan(pose, robot_pose);
+
+  // observation.cost_map = *costmap_ros_->getCostmap();
+  observation.current_x = robot_pose.pose.position.x;
+  observation.current_y = robot_pose.pose.position.y;
+  last_distance_to_target_ = current_distance_to_target_;
  
   //find observations
-  if (!eucledianDistanceToGoal(robot_pose, distance) 
+  if (!eucledianDistanceToGoal(robot_pose, current_distance_to_target_) 
     || !findAngle(robot_pose, path_reference_pose, path_angle)
-    ||!findAngle(robot_pose, goalPose, goal_angle) ){
+    || !findAngle(robot_pose, goalPose, goal_angle)){
     throw nav2_core::PlannerException("Unable to calculate state"); 
   }
-  float weights[3] = {1.0f, 2.0f, 1.0f};
-  float reward = utils::claculateRewards(goal_angle, path_angle, distance, weights);
-  float observations[4] = {goal_angle, path_angle, distance, reward};
-  std::vector<double> observations_vector(observations, observations + 4);
-  obeservationArray_.data = observations_vector;
-  publisher_->publish(obeservationArray_);
 
-  // Find the first pose which is at a distance greater than the specified lookahed distance
-  auto goal_pose_it = std::find_if(
-    transformed_plan.poses.begin(), transformed_plan.poses.end(), [&](const auto & ps) {
-      return hypot(ps.pose.position.x, ps.pose.position.y) >= lookahead_dist_;
-    });
+  change_in_distance_to_target = current_distance_to_target_ - last_distance_to_target_;
+  float weights[3] = {-0.1f, -0.2f, 0.1f};
+  float reward = utils::claculateRewards(goal_angle, path_angle, change_in_distance_to_target, weights);
 
-  // If the last pose is still within lookahed distance, take the last pose
-  if (goal_pose_it == transformed_plan.poses.end()) {
-    goal_pose_it = std::prev(transformed_plan.poses.end());
-  }
+  observation.reward = reward;
+  observation.distance_target = current_distance_to_target_;
+  observation.goal_angle = goal_angle;
+  observation.path_angle = path_angle;
+
+  publisher_->publish(observation);
+
+  // // Find the first pose which is at a distance greater than the specified lookahed distance
+  // auto goal_pose_it = std::find_if(
+  //   transformed_plan.poses.begin(), transformed_plan.poses.end(), [&](const auto & ps) {
+  //     return hypot(ps.pose.position.x, ps.pose.position.y) >= lookahead_dist_;
+  //   });
+
+  // // If the last pose is still within lookahed distance, take the last pose
+  // if (goal_pose_it == transformed_plan.poses.end()) {
+  //   goal_pose_it = std::prev(transformed_plan.poses.end());
+  // }
 
   double linear_vel = latest_action_.linear.x;
   double angular_vel = latest_action_.angular.z;
-
-
 
   // Create and publish a TwistStamped message with the desired velocity
   geometry_msgs::msg::TwistStamped cmd_vel;
@@ -240,8 +247,8 @@ bool SACController::findAngle(const geometry_msgs::msg::PoseStamped & robot_pose
 
 void SACController::setPlan(const nav_msgs::msg::Path & path)
 {
-  global_pub_->publish(path);
-  global_plan_ = path;
+  // global_pub_->publish(path);
+  // global_plan_ = path;
 }
 
 nav_msgs::msg::Path

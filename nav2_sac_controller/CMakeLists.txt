@@ -1,11 +1,12 @@
 cmake_minimum_required(VERSION 3.8)
 project(nav2_sac_controller)
 
+# Add compile options for warnings
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
-# find dependencies
+# Find dependencies
 find_package(ament_cmake REQUIRED)
 find_package(ament_cmake_ros REQUIRED)
 find_package(rclcpp REQUIRED)
@@ -25,16 +26,27 @@ find_package(tf2_ros REQUIRED)
 find_package(nav2_costmap_2d REQUIRED)
 find_package(pluginlib REQUIRED)
 find_package(tf2 REQUIRED)
+find_package(rosidl_default_generators REQUIRED)
+find_package(custom_interfaces REQUIRED)
 
+
+# add_executable(nav2_sac_controller src/nav2_sac_controller.cpp)
+
+
+# Export plugin description file for pluginlib
 pluginlib_export_plugin_description_file(nav2_core nav2_sac_controller.xml)
 
+# Define the library target
+add_library(nav2_sac_controller SHARED src/sac_controller.cpp)
 
-
-add_library(nav2_sac_controller src/sac_controller.cpp)
-target_compile_features(nav2_sac_controller PUBLIC c_std_99 cxx_std_17)  # Require C99 and C++17
+# Set C++ standards and include directories
+target_compile_features(nav2_sac_controller PUBLIC cxx_std_17)
 target_include_directories(nav2_sac_controller PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-  $<INSTALL_INTERFACE:include>)
+  $<INSTALL_INTERFACE:include>
+)
+
+# Link dependencies to the target
 ament_target_dependencies(
   nav2_sac_controller
   "rclcpp"
@@ -53,12 +65,14 @@ ament_target_dependencies(
   "tf2_ros"
   "nav2_costmap_2d"
   "pluginlib"
+  "tf2"
+  "custom_interfaces"
 )
 
-# Causes the visibility macros to use dllexport rather than dllimport,
-# which is appropriate when building the dll but not consuming it.
+# Set compile definitions
 target_compile_definitions(nav2_sac_controller PRIVATE "NAV2_SAC_CONTROLLER_BUILDING_LIBRARY")
 
+# Install include directory and library
 install(
   DIRECTORY include/
   DESTINATION include
@@ -70,32 +84,25 @@ install(
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION bin
 )
+
+# Install launch and config directories
 install(DIRECTORY
-launch
-config
-DESTINATION share/${PROJECT_NAME}/
+  launch
+  config
+  DESTINATION share/${PROJECT_NAME}/
 )
 
+# Setup testing if enabled
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
-  # the following line skips the linter which checks for copyrights
-  # comment the line when a copyright and license is added to all source files
-  set(ament_cmake_copyright_FOUND TRUE)
-  # the following line skips cpplint (only works in a git repo)
-  # comment the line when this package is in a git repo and when
-  # a copyright and license is added to all source files
+  set(ament_cmake_copyright_FOUND TRUE) # Adjust these settings if copyright checks are needed
   set(ament_cmake_cpplint_FOUND TRUE)
   ament_lint_auto_find_test_dependencies()
 endif()
 
-ament_export_include_directories(
-  include
-)
-ament_export_libraries(
-  nav2_sac_controller
-)
-ament_export_targets(
-  export_${PROJECT_NAME}
-)
+# Export package information
+ament_export_include_directories(include)
+ament_export_libraries(nav2_sac_controller)
+ament_export_targets(export_${PROJECT_NAME})
 
 ament_package()

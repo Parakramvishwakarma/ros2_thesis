@@ -11,7 +11,7 @@ setup(
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
     ],
-    install_requires=['setuptools', 'gymnasium', 'rclpy'],
+    install_requires=['setuptools', 'gymnasium', 'rclpy', 'custom_interfaces'],
     zip_safe=True,
     maintainer='parakram',
     maintainer_email='parakram@todo.todo',

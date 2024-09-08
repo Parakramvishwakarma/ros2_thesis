@@ -25,6 +25,8 @@
 #include "nav_msgs/msg/path.hpp"
 #include "tf2_ros/buffer.h"
 #include "nav2_costmap_2d/costmap_2d_ros.hpp"
+#include "custom_interfaces/msg/observations.hpp"     // CHANGE
+
 
 
 namespace nav2_sac_controller
@@ -101,8 +103,10 @@ protected:
   rclcpp::Duration transform_tolerance_ {0, 0};
   nav_msgs::msg::Path global_plan_;
   std::shared_ptr<rclcpp_lifecycle::LifecyclePublisher<nav_msgs::msg::Path>> global_pub_;
-  rclcpp::Publisher<example_interfaces::msg::Float64MultiArray>::SharedPtr publisher_;
+  rclcpp::Publisher<custom_interfaces::msg::Observations>::SharedPtr publisher_;
   rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr action_subscriber_; // Subscriber for actions
+  float current_distance_to_target_;
+  float last_distance_to_target_;
   geometry_msgs::msg::Twist latest_action_; // Store the most recent action
 
 
