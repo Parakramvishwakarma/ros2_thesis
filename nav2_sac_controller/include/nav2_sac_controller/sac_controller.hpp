@@ -73,6 +73,7 @@ protected:
 // hence in this function we will convert the odom frame pose to global plan and file last pose and the distance to it
   bool eucledianDistanceToGoal(
     const geometry_msgs::msg::PoseStamped & in_pose,
+    const geometry_msgs::msg::PoseStamped & goal_pose,
     float & distance
   );
 

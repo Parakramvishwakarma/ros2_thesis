@@ -7,4 +7,5 @@ float64 path_angle
 float64 reward
 float64 speed
 float64 angular_speed
-
+float64 lookahead_x
+float64 lookahead_y

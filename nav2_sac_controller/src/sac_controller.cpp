@@ -172,10 +172,7 @@ geometry_msgs::msg::TwistStamped SACController::computeVelocityCommands(
   //put the robot_pose in the wider scope so no repitition
   //here we are simply converting the robot pose into the frame of the global plan which is "map"
   geometry_msgs::msg::PoseStamped robot_pose;
-  geometry_msgs::msg::PoseStamped goalPose = global_plan_.poses.back();
-  geometry_msgs::msg::PoseStamped path_reference_pose = global_plan_.poses[offset_from_furtherest_];
 
-  float goal_angle;
   float path_angle;
   float change_in_distance_to_target;
 
@@ -183,31 +180,38 @@ geometry_msgs::msg::TwistStamped SACController::computeVelocityCommands(
   
   auto transformed_plan = transformGlobalPlan(pose, robot_pose);
 
+  auto goal_pose_it = std::find_if(
+  global_plan_.poses.begin(), global_plan_.poses.end(), [&](const auto & ps) {
+    return hypot(ps.pose.position.x, ps.pose.position.y) >= lookahead_dist_;
+  });
+
+  // If the last pose is still within lookahed distance, take the last pose
+  if (goal_pose_it == global_plan_.poses.end()) {
+    goal_pose_it = std::prev(global_plan_.poses.end());
+  }
+
+  auto goal_pose = goal_pose_it->pose;
+  observation.lookahead_x = goal_pose.position.x;
+  observation.lookahead_y = goal_pose.position.y
+
   // observation.cost_map = *costmap_ros_->getCostmap();
   observation.current_x = robot_pose.pose.position.x;
   observation.current_y = robot_pose.pose.position.y;
   last_distance_to_target_ = current_distance_to_target_;
  
   //find observations
-  if (!eucledianDistanceToGoal(robot_pose, current_distance_to_target_) 
-    || !findAngle(robot_pose, path_reference_pose, path_angle)
-    || !findAngle(robot_pose, goalPose, goal_angle)){
+  if (!eucledianDistanceToGoal(robot_pose, goal_pose, current_distance_to_target_) 
+    || !findAngle(robot_pose, goal_pose, path_angle)){
     throw nav2_core::PlannerException("Unable to calculate state"); 
   }
 
-  change_in_distance_to_target = 100 * (current_distance_to_target_ - last_distance_to_target_);
-
-
   float weights[4] = {-0.3f, 1.5f, 0.2f, -0.2f };
   float reward = utils::claculateRewards(path_angle, current_distance_to_target_, current_velocity_, weights);
-
   observation.reward = reward;
   observation.distance_target = current_distance_to_target_;
-  observation.change_in_distance =  change_in_distance_to_target;
+  observation.change_in_distance = 100 * (current_distance_to_target_ - last_distance_to_target_);;
   observation.speed = current_velocity_.linear.x;
   observation.angular_speed = abs(current_velocity_.angular.z);
-
-  observation.goal_angle = goal_angle;
   observation.path_angle = path_angle;
 
   publisher_->publish(observation);
@@ -226,13 +230,12 @@ geometry_msgs::msg::TwistStamped SACController::computeVelocityCommands(
 }
 
 
-bool SACController::eucledianDistanceToGoal(const geometry_msgs::msg::PoseStamped & robot_pose, float & distance)
+bool SACController::eucledianDistanceToGoal(const geometry_msgs::msg::PoseStamped & robot_pose, const geometry_msgs::msg::PoseStamped & goal_pose, float & distance)
 {
   if (global_plan_.poses.empty()) {
     distance = 0.00;
     return true;
   }
-  geometry_msgs::msg::PoseStamped goal_pose = global_plan_.poses.back();
 
   if (robot_pose.header.frame_id != global_plan_.header.frame_id) {
     throw nav2_core::PlannerException("Trying to calculate the distance but input pose is not in global plan frame");

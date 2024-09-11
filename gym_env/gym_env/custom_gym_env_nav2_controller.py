@@ -331,8 +331,8 @@ class CustomGymnasiumEnvNav2(gym.Env):
             return True
         elif self.closestObstacle < 0.5:
             self.subscribeNode.get_logger().info("Terminated WE HIT AN OBSTACLE")
-            linear_vel = 5.0  
-            angular_vel = action[1] * 3.14 
+            linear_vel = -5.0  
+            angular_vel = 0 
             self.publishNode.sendAction(linear_vel, angular_vel)
             self.reward = -1
             return True
