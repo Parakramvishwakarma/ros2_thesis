@@ -165,10 +165,9 @@ class CustomGymnasiumEnvNav2(gym.Env):
         linear_vel = action[0] * 5.0  
         angular_vel = action[1] * 3.14 
         self.publishNode.sendAction(linear_vel, angular_vel)
-
-
-        self.subscribeNode.get_logger().info(f"Angular {angular_vel}")
+        rclpy.spin_once(self.publishNode, timeout_sec=1.0)
         self.subscribeNode.get_logger().info(f"Count {self.counter}")
+
         if self.lastAngVelocity == None:
             self.lastAngVelocity = round(angular_vel, 3)
         else:   
@@ -178,10 +177,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
             else:
                 self.lastAngVelocity = round(angular_vel, 3)    
     
-
         #send action from the model
-        self.publishNode.sendAction(linear_vel, angular_vel)
-        rclpy.spin_once(self.publishNode, timeout_sec=1.0)
         
         # Wait for new scan and pose data
         rclpy.spin_once(self.subscribeNode, timeout_sec=1.0)
@@ -331,8 +327,8 @@ class CustomGymnasiumEnvNav2(gym.Env):
             return True
         elif self.closestObstacle < 0.5:
             self.subscribeNode.get_logger().info("Terminated WE HIT AN OBSTACLE")
-            linear_vel = 5.0  
-            angular_vel = action[1] * 3.14 
+            linear_vel = -5.0  
+            angular_vel = 0 
             self.publishNode.sendAction(linear_vel, angular_vel)
             self.reward = -1
             return True
