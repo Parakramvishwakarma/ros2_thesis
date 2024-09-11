@@ -136,7 +136,7 @@ void SACController::setSpeedLimit(const double& speed_limit, const bool& percent
   (void) percentage;
 }
 
-geometry_msgs::msg::TwistStamped SACController::computeVelocityCommands(
+void SACController::computeVelocityCommands(
   const geometry_msgs::msg::PoseStamped & pose,
   const geometry_msgs::msg::Twist & velocity,
   nav2_core::GoalChecker * goal_checker)
@@ -154,7 +154,7 @@ geometry_msgs::msg::TwistStamped SACController::computeVelocityCommands(
   cmd_vel.header.stamp = clock_->now();
   cmd_vel.twist.linear.x = linear_vel;
   cmd_vel.twist.angular.z = angular_vel;
-  return cmd_vel;
+  // return cmd_vel;
 }
 
 void SACController::setPlan(const nav_msgs::msg::Path & path)
