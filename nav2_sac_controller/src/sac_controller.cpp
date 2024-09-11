@@ -145,7 +145,7 @@ geometry_msgs::msg::TwistStamped SACController::computeVelocityCommands(
   (void)velocity;
   geometry_msgs::msg::PoseStamped robot_pose;
   auto transformed_plan = transformGlobalPlan(pose, robot_pose);
-  geometry_msgs::msg::Twist() latest_action_;
+  geometry_msgs::msg::Twist latest_action_;
   double linear_vel = latest_action_.linear.x;
   double angular_vel = latest_action_.angular.z;
   // Create and publish a TwistStamped message with the desired velocity

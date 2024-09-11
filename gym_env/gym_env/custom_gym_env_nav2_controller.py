@@ -10,12 +10,10 @@ from nav2_msgs.msg import ParticleCloud
 from rclpy.qos import qos_profile_sensor_data
 from geometry_msgs.msg import Pose, PoseWithCovarianceStamped, Twist, PoseStamped, Point
 from nav_msgs.msg import Odometry, Path, OccupancyGrid
-from example_interfaces.msg import Float64MultiArray
-from custom_interfaces.msg import Observations
 from map_msgs.msg import OccupancyGridUpdate
 import time
-import matplotlib.pyplot as plt
-import os
+from rclpy.qos import QoSProfile, QoSDurabilityPolicy, QoSReliabilityPolicy
+
 
 class Subscriber(Node):
     def __init__(self):
@@ -45,19 +43,28 @@ class Subscriber(Node):
             '/global_costmap/costmap_updates',
             self.map_update_callback,
             10)
+        
+        qos_profile = QoSProfile(
+            reliability=QoSReliabilityPolicy.RELIABLE,
+            durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
+            depth=10  # This can be adjusted as needed
+        )
+        # Create the subscriber
         self.subscription_pose = self.create_subscription(
             PoseWithCovarianceStamped,
             '/amcl_pose',
             self.pose_callback,
-            qos_profile_sensor_data)
+            qos_profile)
         
+        self.subscription_pose 
+
+
         self.scan_data = None
         self.speed_data = None
         self.path_data = None
         self.og_cost_map_grid = None
         self.map_update = None
         self.pose_data = None
-
 
     def scan_callback(self, msg):
         self.scan_data = msg
@@ -71,16 +78,18 @@ class Subscriber(Node):
         self.path_data = msg.poses
         
     def map_callback(self, msg):
+
         #This is the array of occupancy grid we are not currently sure waht the obejctive of the origin is        
         self.og_cost_map_grid = msg.data
 
     def map_update_callback(self, msg):
+
         self.map_update = msg
         ##this needs code to how we update the orignal cost map
         ##msg type is map_msgs/msg/OccupancyGridUpdate
     
     def pose_callback(self, msg):
-        self.pose_data = [msg.pose.pose.position.x, msg.pose.pose.position.y]
+        self.pose_data = msg.pose.pose
    
 
 class Publisher(Node):
@@ -133,7 +142,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
         }
         self.plot_interval = 1000  # Interval for plotting
 
-
+        #these are all the intermediary variables used to create the state and the reward for the agent
         self.angularVelocityCounter = 0
         self.lastAngVelocity = None
         self.pathAngle = None
@@ -143,11 +152,12 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.changeInDistanceToTarget = 0
         self.closestObstacle = None
         self.reward = 0
-        self.currentPose = []
-        self.goalPose = []
         self.linearVelocity = None
         self.angularVelocity = None
-        self.lidarTracking = np.array([[], [], []])
+        self.lidarTracking = np.zeros((3, 640), dtype=np.float32)
+
+        #this is the param for how many poses ahead the path we look to find the path angle
+        self.lookAheadDist = 40 
 
         #define the subcriber and publisher nodes
         self.subscribeNode = Subscriber()
@@ -155,30 +165,25 @@ class CustomGymnasiumEnvNav2(gym.Env):
 
         #define the target pose for training
         self.target_pose = None
-        self.intial_pose = Pose()
 
         #set reward parameters
-        #this is the one for the closest obstacle 
-
-        self.alpha = -0.2 #this one is for the goal angle
-        
-        self.beta = 3
-        self.gamma  = -0.2
-        
-
-
+        self.alpha = -0.2 #this one is for the path angle
+        self.beta = 1.5 # this one is for the distance from the target
+        self.gamma  = -0.2 #this is for closest obstacle
+        self.roh = 0.2 #this is for linear.x speed
+        self.mu  = -0.2 #this is penalty for spinnging
+    
         #scanner parameters
         self.scannerRange = [0.164000004529953, 12.0]
         self.scannerIncrementRads = 0.009817477315664291
 
-        #data variables
+        #observation data variables from the environment
         self.scan_data = None
         self.speed_twist = None
-        self.poseArray  = None
+        self.currentPose = None
         self.pathArray = None
         self.mapArray = None
         self.mapUpdateData = None
-
 
         # Define action and observation space
         self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(2,), dtype=np.float32)
@@ -200,21 +205,26 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.changeInDistanceToTarget = 0
         self.closestObstacle = None
         self.reward = 0
-        self.currentPose = []
-        self.goalPose = []
         self.linearVelocity = None
         self.angularVelocity = None
         self.lidarTracking = np.zeros((3, 640), dtype=np.float32)
         self.counter = 0
-
+        #these are data hodling variables
+        self.scan_data = None
+        self.speed_twist = None
+        self.currentPose = None
+        self.pathArray = None
+        self.mapArray = None
+        self.mapUpdateData = None
     
     def step(self, action):
         #the function includes a step counter to keep track of terminal //..condition
         self.counter += 1
-        self.subscribeNode.get_logger().info(f"Count {self.counter}")
         linear_vel = action[0] * 5.0  
         angular_vel = action[1] * 3.14 
         self.publishNode.sendAction(linear_vel, angular_vel) #send action from the model
+        self.subscribeNode.get_logger().info(f"This is the new action {linear_vel}, {angular_vel}")
+
         rclpy.spin_once(self.publishNode, timeout_sec=1.0)
     
         if self.lastAngVelocity == None:
@@ -232,28 +242,37 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.scan_data = self.subscribeNode.scan_data
         self.speed_twist = self.subscribeNode.speed_data
         self.pathArray = self.subscribeNode.path_data
+        self.currentPose  = self.subscribeNode.pose_data
+
         # self.mapArray = self.subscribeNode.og_cost_map_grid
         # This doesn't neccesarily need to be stored here, what we wil do is 
         # that if there is an update we will just simply update the global map variable
         # self.mapUpdateData = self.subscribeNode.map_update
-        self.currentPose  = self.subscribeNode.pose_data
-
+        if not self.scan_data:
+            self.subscribeNode.get_logger().info("Scan not present")
+        if not self.speed_twist:
+            self.subscribeNode.get_logger().info("speed not present")
+        if not self.currentPose:
+            self.subscribeNode.get_logger().info("current pose not present")
+        if not self.pathArray:
+            self.subscribeNode.get_logger().info("plan not present")
 
         #get udpated observations from odometry
         if ( self.scan_data and self.speed_twist and self.currentPose and self.pathArray):
+            self.subscribeNode.get_logger().info(f"Count {len(self.pathArray)}")
+
             if self.counter ==1:
                 self.subscribeNode.get_logger().info("Running New Episode")
 
             self.closestObstacle = min(self.scan_data.ranges)  #find the closest obstacle
             self._roundLidar()
             self.updateLidar()
-
-            self.goalPose = [self.target_pose.position.x, self.target_pose.position.y]
             self.lastDistanceToTarget = self.newDistanceToTarget
             self.newDistanceToTarget = self._getDistance()
-            self.goalAngle = self._getGoalAngle()
-            self.pathAngle = self._getPathAngle()
-            self.changeInDistanceToTarget = self.newDistanceToTarget - self.lastDistanceToTarget
+            # self.goalAngle = self._getGoalAngle()
+            self.pathAngle = self._calculate_heading_angle(self.currentPose, self.pathArray[self.lookAheadDist].pose)
+            if self.lastDistanceToTarget:
+                self.changeInDistanceToTarget = self.newDistanceToTarget - self.lastDistanceToTarget
             
             self.linearVelocity= round(self.speed_twist.linear.x, 2) 
             self.angularVelocity = round(self.speed_twist.angular.z,2)
@@ -262,13 +281,12 @@ class CustomGymnasiumEnvNav2(gym.Env):
             self._calculateReward()
             #this will check the terminal conditions and if its terminated update self.reward accordingly
             terminated = self._checkTerminalConditions()
-
             observation = {
                 'lidar': self.lidarTracking,
                 'linear_velocity': self.linearVelocity,
                 'angular_velocity': self.angularVelocity,
-                'goal_pose': self.goalPose,
-                'current_pose': self.currentPose ,
+                'goal_pose': [self.target_pose.position.x, self.target_pose.position.y],
+                'current_pose': [self.currentPose.position.x, self.currentPose.position.y] ,
             }
         else:
             self.subscribeNode.get_logger().info("Scan or observation data missing")
@@ -322,31 +340,33 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.publishNode.send_goal_pose(self.target_pose)
 
         rclpy.spin_once(self.publishNode, timeout_sec=1.0)
-        #get inintial obs
+        
+        #get inintial observations
         rclpy.spin_once(self.subscribeNode, timeout_sec=1.0)
 
-        scan_data = self.subscribeNode.scan_data
-        observation_data = self.subscribeNode.observationData
+        self.scan_data = self.subscribeNode.scan_data
+        self.speed_twist = self.subscribeNode.speed_data
+        self.pathArray = self.subscribeNode.path_data
+        self.currentPose  = self.subscribeNode.pose_data
 
-        if scan_data and observation_data:
-            self.reward = observation_data.reward
-            self.closestObstacle = min(scan_data.ranges)  #find the closest obstacle
-            lidar_observation = self._roundLidar(scan_data.ranges)
-            self.updateLidar(lidar_observation)
-            self.currentPose = [observation_data.current_x, observation_data.current_y]
-            self.goalPose = [self.target_pose.position.x, self.target_pose.position.y]
-            self.newDistanceToTarget = observation_data.distance_target
-            self.goalAngle = observation_data.goal_angle
-            self.pathAngle = observation_data.path_angle
-            self.linearVelocity= round(observation_data.speed, 2) 
-            self.angularVelocity = round(observation_data.angular_speed,2)
+        # self.mapArray = self.subscribeNode.og_cost_map_grid
+        # This doesn't neccesarily need to be stored here, what we wil do is 
+        # that if there is an update we will just simply update the global map variable
+        # self.mapUpdateData = self.subscribeNode.map_update
 
+        #get udpated observations from odometry
+        if ( self.scan_data and self.speed_twist and self.currentPose and self.pathArray):
+            self._roundLidar()
+            self.updateLidar()
+            self.newDistanceToTarget = self._getDistance()
+            self.linearVelocity= round(self.speed_twist.linear.x, 2) 
+            self.angularVelocity = round(self.speed_twist.angular.z,2)
             observation = {
                 'lidar': self.lidarTracking,
                 'linear_velocity': self.linearVelocity,
                 'angular_velocity': self.angularVelocity,
-                'goal_pose': self.goalPose,
-                'current_pose': self.currentPose,
+                'goal_pose': [self.target_pose.position.x, self.target_pose.position.y],
+                'current_pose': [self.currentPose.position.x, self.currentPose.position.y] ,
             }
         else:
             observation = self.observation_space.sample()  # Return a random observation within space
@@ -368,10 +388,10 @@ class CustomGymnasiumEnvNav2(gym.Env):
 
     def _calculateReward(self):
         obstacleReward = 0
+        self.reward = self.pathAngle * self.alpha + (self.beta/self.newDistanceToTarget) + self.roh * self.linearVelocity + self.mu * self.angularVelocity
         if self.closestObstacle < 6:
             obstacleReward = (self.gamma)* (1 / self.closestObstacle) # this means a max pentaly possible is around -0.75
         self.reward += obstacleReward
-        # self.subscribeNode.get_logger().info(f"Distance: {distanceReward}, Obstacle {obstacleReward} Speed: {speedReward}")
 
     def _checkTerminalConditions(self): 
         if self.newDistanceToTarget < 0.5:
@@ -392,14 +412,59 @@ class CustomGymnasiumEnvNav2(gym.Env):
             return False
 
     def _roundLidar(self):
-        self.scan_data.ranges = np.where(np.isinf(self.scan_data.ranges), 12, self.scan_data.ranges)
-        self.scan_data.ranges = np.array(self.scan_data.ranges, dtype=np.float32)
+        # Ensure self.scan_data.ranges is a numpy array first
+        ranges_array = np.array(self.scan_data.ranges, dtype=np.float32)
+
+        # Replace infinite values with 12 and ensure the result is a numpy array of floats
+        processed_ranges = np.where(np.isinf(ranges_array), 12.0, ranges_array).astype(float)
+
+        # Convert back to list if required by the LaserScan message
+        self.scan_data.ranges = processed_ranges.tolist()
+
+        # Ensure that all values are within the acceptable range of float values
+        # assert all(isinstance(x, float) and -3.4e38 <= x <= 3.4e38 for x in self.scan_data.ranges), \
+        #     "All elements of 'ranges' must be floats within the acceptable range."
 
     def _getDistance(self):
-        delta_x = self.target_pose.position.x - self.currentPose[0]
-        delta_y = self.target_pose.position.y - self.poseArray[1]
+        delta_x = self.target_pose.position.x - self.currentPose.position.x
+        delta_y = self.target_pose.position.y - self.currentPose.position.y
         distance = float((delta_x**2 + delta_y**2) ** 0.5)
         return distance
+
+    def _calculate_heading_angle(self,current_pose, goal_pose):
+        # Extract x and y positions
+        current_x = current_pose.position.x
+        current_y = current_pose.position.y
+        goal_x = goal_pose.position.x
+        goal_y = goal_pose.position.y
+
+        # Calculate the desired heading using atan2
+        desired_heading = m.atan2(goal_y - current_y, goal_x - current_x)
+
+        # Extract the quaternion from the current pose
+        current_orientation = current_pose.orientation
+        current_yaw = self._quaternion_to_yaw(
+            current_orientation.x,
+            current_orientation.y,
+            current_orientation.z,
+            current_orientation.w
+        )
+
+        # Calculate the heading angle difference
+        heading_angle = desired_heading - current_yaw
+
+        # Normalize the heading angle to the range [-pi, pi]
+        heading_angle = (heading_angle + m.pi) % (2 * m.pi) - m.pi
+
+        return heading_angle
+    
+    def _quaternion_to_yaw(self,x, y, z, w):
+        """Convert a quaternion into yaw (rotation around Z-axis)"""
+        # Yaw (Z-axis rotation)
+        siny_cosp = 2.0 * (w * z + x * y)
+        cosy_cosp = 1.0 - 2.0 * (y * y + z * z)
+        return m.atan2(siny_cosp, cosy_cosp)
+
 
     def updateLidar(self):
         # self.subscribeNode.get_logger().info(f"Length of rounded lidar {len(lidarObservation)}")
