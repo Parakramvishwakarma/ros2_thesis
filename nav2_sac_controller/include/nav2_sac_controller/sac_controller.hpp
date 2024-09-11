@@ -23,6 +23,7 @@
 #include "std_msgs/msg/float64.hpp"
 #include "example_interfaces/msg/float64_multi_array.hpp"
 #include "nav_msgs/msg/path.hpp"
+#include "nav_msgs/msg/odometry.hpp"
 #include "tf2_ros/buffer.h"
 #include "nav2_costmap_2d/costmap_2d_ros.hpp"
 #include "custom_interfaces/msg/observations.hpp"     // CHANGE
@@ -82,6 +83,10 @@ protected:
   );
 
   void actionCallback(const geometry_msgs::msg::Twist::SharedPtr msg); // Callback for the action subscriber
+  void odomCallback(const nav_msgs::msg::Odometry::SharedPtr msg);
+
+
+
 
 
   // float getspeed();
@@ -108,7 +113,8 @@ protected:
   float current_distance_to_target_;
   float last_distance_to_target_;
   geometry_msgs::msg::Twist latest_action_; // Store the most recent action
-
+  rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_subscriber_;
+  geometry_msgs::msg::Twist current_velocity_;  // To store the latest velocity from /odom
 
 };
 

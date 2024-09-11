@@ -107,14 +107,24 @@ void SACController::configure(
     "/action", rclcpp::QoS(10),
     std::bind(&SACController::actionCallback, this, std::placeholders::_1));
   global_pub_ = node->create_publisher<nav_msgs::msg::Path>("received_global_plan", 1);
+
+  odom_subscriber_ = node->create_subscription<nav_msgs::msg::Odometry>(
+  "/diffdrive_controller/odom", rclcpp::QoS(10),
+  std::bind(&SACController::odomCallback, this, std::placeholders::_1));
 }
 
 void SACController::actionCallback(const geometry_msgs::msg::Twist::SharedPtr msg)
 {
   // Update the latest action with the received message
   latest_action_ = *msg;
-  RCLCPP_INFO(logger_, "Received new action: linear.x: %f, angular.z: %f", latest_action_.linear.x, latest_action_.angular.z);
 }
+
+void SACController::odomCallback(const nav_msgs::msg::Odometry::SharedPtr msg)
+{
+  // Update the current velocity with the received message
+  current_velocity_ = msg->twist.twist;  
+}
+
 void SACController::cleanup() 
 {
   RCLCPP_INFO(
@@ -157,6 +167,7 @@ geometry_msgs::msg::TwistStamped SACController::computeVelocityCommands(
   nav2_core::GoalChecker * goal_checker)
 {
   (void)goal_checker;
+  (void)velocity;
 
   //put the robot_pose in the wider scope so no repitition
   //here we are simply converting the robot pose into the frame of the global plan which is "map"
@@ -184,12 +195,18 @@ geometry_msgs::msg::TwistStamped SACController::computeVelocityCommands(
     throw nav2_core::PlannerException("Unable to calculate state"); 
   }
 
-  change_in_distance_to_target = current_distance_to_target_ - last_distance_to_target_;
-  float weights[3] = {-0.1f, -0.2f, 0.1f};
-  float reward = utils::claculateRewards(goal_angle, path_angle, change_in_distance_to_target, weights);
+  change_in_distance_to_target = 100 * (current_distance_to_target_ - last_distance_to_target_);
+
+
+  float weights[4] = {-0.3f, 0.10f, 0.2f, -0.2f };
+  float reward = utils::claculateRewards(path_angle, change_in_distance_to_target, current_velocity_, weights);
 
   observation.reward = reward;
   observation.distance_target = current_distance_to_target_;
+  observation.change_in_distance =  change_in_distance_to_target;
+  observation.speed = sqrt(current_velocity_.linear.x * current_velocity_.linear.x  + current_velocity_.linear.y * current_velocity_.linear.y);
+  observation.angular_speed = abs(current_velocity_.angular.z);
+
   observation.goal_angle = goal_angle;
   observation.path_angle = path_angle;
 
@@ -247,8 +264,8 @@ bool SACController::findAngle(const geometry_msgs::msg::PoseStamped & robot_pose
 
 void SACController::setPlan(const nav_msgs::msg::Path & path)
 {
-  // global_pub_->publish(path);
-  // global_plan_ = path;
+  global_pub_->publish(path);
+  global_plan_ = path;
 }
 
 nav_msgs::msg::Path

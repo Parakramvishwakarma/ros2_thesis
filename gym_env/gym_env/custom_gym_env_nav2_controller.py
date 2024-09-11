@@ -2,6 +2,7 @@ import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
 import rclpy
+import pandas as pd
 import math as m
 from rclpy.node import Node
 from sensor_msgs.msg import LaserScan
@@ -23,11 +24,11 @@ class Subscriber(Node):
             '/scan',
             self.scan_callback,
             10)
-        self.subscription_pose = self.create_subscription(
-            Odometry,
-            '/diffdrive_controller/odom',
-            self.pose_callback,
-            qos_profile_sensor_data)
+        # self.subscription_pose = self.create_subscription(
+        #     Odometry,
+        #     '/diffdrive_controller/odom',
+        #     self.pose_callback,
+        #     qos_profile_sensor_data)
         self.subscription_pose = self.create_subscription(
             Observations,
             '/observations',
@@ -44,8 +45,8 @@ class Subscriber(Node):
     def observation_callback(self, msg):
         self.observationData = msg
    
-    def pose_callback(self, msg):
-        self.odom_data = msg
+    # def pose_callback(self, msg):
+    #     self.odom_data = msg
     
 class Publisher(Node):
     def __init__(self):
@@ -66,7 +67,7 @@ class Publisher(Node):
         initialPose_pose.header.stamp.sec = 0
         initialPose_pose.header.stamp.nanosec = 0
         initialPose_pose.header.frame_id = "map"
-        initialPose_pose.pose = pose
+        initialPose_pose.pose.pose = pose
         self.publish_initial_pose.publish(initialPose_pose)
         
     def send_goal_pose(self, pose):
@@ -83,6 +84,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
         super(CustomGymnasiumEnvNav2, self).__init__()
         rclpy.init()
         self.counter = 0
+        self.episode_length = 1000
         #inititalise variables
 
         self.data = {
@@ -91,10 +93,13 @@ class CustomGymnasiumEnvNav2(gym.Env):
             'change_distance': [],
             'distance_to_target': [],
             'reward': [],
+            'speed' : [],
+            'angular_speed' : []
         }
 
-        self.plot_interval = 800  # Interval for plotting
-
+        self.plot_interval = 400  # Interval for plotting
+        self.angularVelocityCounter = 0
+        self.lastAngVelocity = None
         self.pathAngle = None
         self.goalAngle = None
         self.lastDistanceToTarget = None
@@ -118,7 +123,8 @@ class CustomGymnasiumEnvNav2(gym.Env):
 
         #set reward parameters
         self.beta = 3
-        self.gamma  = -0.25
+        #this is the one for the closest obstacle 
+        self.gamma  = -0.35
         self.alpha = 0.2
 
         #scanner parameters
@@ -129,13 +135,15 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(2,), dtype=np.float32)
         self.observation_space = spaces.Dict({
             'lidar': spaces.Box(low=0, high=12, shape=(3,640), dtype=np.float32),
-            'linear_velocity': spaces.Box(low=-5, high=5, shape=(1,), dtype=np.float32),
+            'linear_velocity': spaces.Box(low=0, high=5, shape=(1,), dtype=np.float32),
             'angular_velocity': spaces.Box(low=-3.14, high=3.14, shape=(1,), dtype=np.float32),
             'goal_pose': spaces.Box(low=-100.0, high=100.0, shape=(2,), dtype=np.float32),
             'current_pose': spaces.Box(low=-100.0, high=100.0, shape=(2,), dtype=np.float32),
         })
 
     def _initialise(self):
+        self.angularVelocityCounter = 0
+        self.lastAngVelocity = None
         self.pathAngle = None
         self.goalAngle = None
         self.lastDistanceToTarget = None
@@ -152,10 +160,22 @@ class CustomGymnasiumEnvNav2(gym.Env):
 
     
     def step(self, action):
-        #the function includes a step counter to keep track of terminal condition
+        #the function includes a step counter to keep track of terminal //..condition
         self.counter += 1
         linear_vel = action[0] * 5.0  
         angular_vel = action[1] * 3.14 
+
+        self.subscribeNode.get_logger().info(f"Angular {angular_vel}")
+        self.subscribeNode.get_logger().info(f"Count {self.counter}")
+        if self.lastAngVelocity == None:
+            self.lastAngVelocity = round(angular_vel, 3)
+        else:   
+            if self.lastAngVelocity == round(angular_vel, 3):
+                self.angularVelocityCounter += 1
+                self.subscribeNode.get_logger().info(f"test{self.angularVelocityCounter}")
+            else:
+                self.lastAngVelocity = round(angular_vel, 3)    
+    
 
         #send action from the model
         self.publishNode.sendAction(linear_vel, angular_vel)
@@ -166,14 +186,14 @@ class CustomGymnasiumEnvNav2(gym.Env):
 
         scan_data = self.subscribeNode.scan_data
         observation_data = self.subscribeNode.observationData
-        odom_data = self.subscribeNode.odom_data
 
         #get udpated observations from odometry
-        if (scan_data and observation_data and odom_data):
-            self.reward = observation_data.reward
+        if (scan_data and observation_data):
             if self.counter ==1:
                 self.subscribeNode.get_logger().info("Running New Episode")
-            
+
+            self.reward = observation_data.reward
+
             self.closestObstacle = min(scan_data.ranges)  #find the closest obstacle
             lidar_observation = self._roundLidar(scan_data.ranges)
             self.updateLidar(lidar_observation)
@@ -185,43 +205,49 @@ class CustomGymnasiumEnvNav2(gym.Env):
             self.pathAngle = observation_data.path_angle
             self.changeInDistanceToTarget = observation_data.change_in_distance
             
-            self.linearVelocity= round(((odom_data.twist.twist.linear.x **2 + odom_data.twist.twist.linear.y**2)**0.5) , 2) 
-            self.angularVelocity = round(odom_data.twist.twist.angular.z, 2 )
+            self.linearVelocity= round(((observation_data.speed))) 
+            self.angularVelocity = round(observation_data.angular_speed)
+
+            #this is us updating the reward class variable with 
+            self._calculateReward()
+            #this will check the terminal conditions and if its terminated update self.reward accordingly
+            terminated = self._checkTerminalConditions()
 
             observation = {
-                'lidar': lidar_observation,
+                'lidar': self.lidarTracking,
                 'linear_velocity': self.linearVelocity,
                 'angular_velocity': self.angularVelocity,
                 'goal_pose': self.goalPose,
-                'current_pose': self.currentPose 
+                'current_pose': self.currentPose ,
             }
-            self._calculateReward()
-            reward = self.reward
-            terminated = self.newDistanceToTarget < 0.5 
-            if self.closestObstacle < 0.5:
-                self.subscribeNode.get_logger().info("Terminated WE HIT AN OBSTACLE")
-                
-            truncated = self.counter >= 2000
         else:
-            self.subscribeNode.get_logger().info("Scan or odometry data missing")
+            self.subscribeNode.get_logger().info("Scan or observation data missing")
             observation = self.observation_space.sample()
-            reward = 0
+            self.reward = 0
             terminated = False
-            truncated = self.counter >= 2000
-        if terminated:
-            self.subscribeNode.get_logger().info("WE REACHED THE GOAL")
+
+        #lastly if the episode is over and we have not terminated it then we end it and give a small negative reward for not reaching
+        if terminated == False and self.counter > self.episode_length:
+            self.subscribeNode.get_logger().info("Episode Finished")
+            truncated = True
+            self.reward = -1
+        else:
+            truncated = False
 
         # Store values for plotting
         self.data['timesteps'].append(self.counter)
         self.data['path_angle'].append(self.pathAngle)
-        # self.data['goal_angle'].append(self.goalAngle)
+        self.data['change_distance'].append(self.changeInDistanceToTarget)
         self.data['distance_to_target'].append(self.newDistanceToTarget)
         self.data['reward'].append(self.reward)
+        self.data['speed'].append(self.linearVelocity)
+        self.data['angular_speed'].append(self.angularVelocity)
 
         # Check if it's time to plot
         if len(self.data['reward']) % self.plot_interval == 0:
-            self.plot_data()
-        return observation, reward, terminated, truncated, {}
+            df = pd.DataFrame.from_dict(self.data, orient="index")
+            df.to_csv("data.csv")
+        return observation, self.reward, terminated, truncated, {}
     
 
     def reset(self, seed=None, options=None):
@@ -259,14 +285,14 @@ class CustomGymnasiumEnvNav2(gym.Env):
             self.newDistanceToTarget = observation_data[2]
             self.goalAngle = observation_data[0]
             self.pathAngle = observation_data[1]
-            self.linearVelocity= round(((odom_data.twist.twist.linear.x **2 + odom_data.twist.twist.linear.y**2)**0.5) , 2) 
-            self.angularVelocity = round(odom_data.twist.twist.angular.z, 2 )
+            self.linearVelocity= round(((observation_data.speed))) 
+            self.angularVelocity = round(observation_data.angular_speed)
             observation = {
                 'lidar': self.lidarTracking,
                 'linear_velocity': self.linearVelocity,
                 'angular_velocity': self.angularVelocity,
                 'goal_pose': self.goalPose,
-                'current_pose': self.currentPose 
+                'current_pose': self.currentPose,
             }
         else:
             observation = self.observation_space.sample()  # Return a random observation within space
@@ -288,14 +314,25 @@ class CustomGymnasiumEnvNav2(gym.Env):
 
     def _calculateReward(self):
         obstacleReward = 0
-        if self.closestObstacle < 0.5:  
-            self.reward = -1
-        elif self.closestObstacle < 6:
+        if self.closestObstacle < 6:
             obstacleReward = (self.gamma)* (1 / self.closestObstacle) # this means a max pentaly possible is around -0.75
-
         self.reward += obstacleReward
         # self.subscribeNode.get_logger().info(f"Distance: {distanceReward}, Obstacle {obstacleReward} Speed: {speedReward}")
 
+    def _checkTerminalConditions(self): 
+        if self.newDistanceToTarget < 0.5:
+            self.reward = 1
+            return True
+        elif self.closestObstacle < 0.5:
+            self.subscribeNode.get_logger().info("Terminated WE HIT AN OBSTACLE")
+            self.reward = -1
+            return True
+        elif self.angularVelocityCounter >= 30:
+            self.subscribeNode.get_logger().info("Terminated We are in a circular loop")
+            self.reward = -1
+            return True
+        else:
+            return False
 
     def _roundLidar(self, original_ranges):
         original_ranges = np.where(np.isinf(original_ranges), 12, original_ranges)
@@ -315,8 +352,10 @@ class CustomGymnasiumEnvNav2(gym.Env):
 
         # Plot each variable against the timestep number
         plt.plot(self.data['timesteps'], self.data['path_angle'], label='Path Angle', color='blue')
-        plt.plot(self.data['timesteps'], self.data['goal_angle'], label='Goal Angle', color='green')
+        plt.plot(self.data['timesteps'], self.data['change_distance'], label='Change in distance', color='green')
         plt.plot(self.data['timesteps'], self.data['distance_to_target'], label='Distance to Target', color='red')
+        plt.plot(self.data['timesteps'], self.data['speed'], label='Speed', color='yellow')
+        plt.plot(self.data['timesteps'], self.data['angular_speed'], label='Angular Speed', color='black')
         plt.plot(self.data['timesteps'], self.data['reward'], label='Reward', color='orange')
 
         # Set labels and title

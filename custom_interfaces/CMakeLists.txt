@@ -13,7 +13,7 @@ find_package(rosidl_default_generators REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/Observations.msg"
-  DEPENDENCIES nav2_msgs # Add packages that above messages depend on, in this case geometry_msgs for Sphere.msg
+  DEPENDENCIES nav2_msgs 
 )
 # uncomment the following section in order to fill in
 # further dependencies manually.

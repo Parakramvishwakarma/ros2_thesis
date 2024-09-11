@@ -81,11 +81,10 @@ namespace utils
         return fabs(angles::shortest_angular_distance(yaw, pose_yaw));
     }
 
-    float claculateRewards(float goalAngle, float pathAngle, float changeDistance, float weights[]) {
+    float claculateRewards(float pathAngle, float current_distance_to_target_, geometry_msgs::msg::Twist current_velocity_, float weights[]) {
         //HOW CAN WE MAKE REWARD BETTER?
-        float reward = pathAngle * weights[1] + (weights[2] * changeDistance);
+        float reward = pathAngle * weights[0] + (weights[1] * current_distance_to_target_)  +  weights[2] * sqrt(current_velocity_.linear.x * current_velocity_.linear.x  + current_velocity_.linear.y * current_velocity_.linear.y)  + weights[3] * current_velocity_.angular.z ;
         return reward;    
     }
-
 }
 
