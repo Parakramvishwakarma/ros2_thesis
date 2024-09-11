@@ -154,7 +154,7 @@ SACController::transformGlobalPlan(
 
   if (global_plan_.poses.empty()) {
     throw nav2_core::PlannerException("Received plan with zero length");
-
+  }
 
   // Let's get the pose of the robot in the frame of the plan
   if (!transformPose(
