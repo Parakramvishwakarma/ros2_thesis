@@ -86,6 +86,8 @@ protected:
   rclcpp::Duration transform_tolerance_ {0, 0};
   nav_msgs::msg::Path global_plan_;
   std::shared_ptr<rclcpp_lifecycle::LifecyclePublisher<nav_msgs::msg::Path>> global_pub_;
+  rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr action_subscriber_; // Subscriber for actions
+  geometry_msgs::msg::Twist latest_action_; // Store the most recent action
 
 };
 
