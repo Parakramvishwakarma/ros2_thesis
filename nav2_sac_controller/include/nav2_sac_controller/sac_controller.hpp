@@ -57,40 +57,6 @@ public:
   void setPlan(const nav_msgs::msg::Path & path) override;
 
 protected:
-  nav_msgs::msg::Path transformGlobalPlan(
-    const geometry_msgs::msg::PoseStamped & pose,
-     geometry_msgs::msg::PoseStamped & robot_pose);
-
-  bool transformPose(
-    const std::shared_ptr<tf2_ros::Buffer> tf,
-    const std::string frame,
-    const geometry_msgs::msg::PoseStamped & in_pose,
-    geometry_msgs::msg::PoseStamped & out_pose,
-    const rclcpp::Duration & transform_tolerance
-  ) const;
-
-//goal pose will just be the end of the global_plan
-// hence in this function we will convert the odom frame pose to global plan and file last pose and the distance to it
-  bool eucledianDistanceToGoal(
-    const geometry_msgs::msg::PoseStamped & in_pose,
-    const geometry_msgs::msg::PoseStamped & goal_pose,
-    float & distance
-  );
-
-  bool findAngle(
-    const geometry_msgs::msg::PoseStamped & in_pose,
-    const geometry_msgs::msg::PoseStamped & ref_pose,
-    float & angle
-  );
-
-  void actionCallback(const geometry_msgs::msg::Twist::SharedPtr msg); // Callback for the action subscriber
-  void odomCallback(const nav_msgs::msg::Odometry::SharedPtr msg);
-
-
-
-
-
-  // float getspeed();
 
   rclcpp_lifecycle::LifecycleNode::WeakPtr node_;
   std::shared_ptr<tf2_ros::Buffer> tf_;
@@ -109,13 +75,6 @@ protected:
   rclcpp::Duration transform_tolerance_ {0, 0};
   nav_msgs::msg::Path global_plan_;
   std::shared_ptr<rclcpp_lifecycle::LifecyclePublisher<nav_msgs::msg::Path>> global_pub_;
-  rclcpp::Publisher<custom_interfaces::msg::Observations>::SharedPtr publisher_;
-  rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr action_subscriber_; // Subscriber for actions
-  float current_distance_to_target_;
-  float last_distance_to_target_;
-  geometry_msgs::msg::Twist latest_action_; // Store the most recent action
-  rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_subscriber_;
-  geometry_msgs::msg::Twist current_velocity_;  // To store the latest velocity from /odom
 
 };
 

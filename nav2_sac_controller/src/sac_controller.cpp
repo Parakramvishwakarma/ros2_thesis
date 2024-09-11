@@ -31,9 +31,6 @@ SACController::SACController()
 // tf_(nullptr), costmap_(nullptr)
 {
   tf_ = nullptr;
-  latest_action_ = geometry_msgs::msg::Twist();
-  current_distance_to_target_ = -1;
-  last_distance_to_target_ = -1;
 }
 
 SACController::~SACController()
@@ -45,25 +42,6 @@ SACController::~SACController()
 /**
  * Find element in iterator with the minimum calculated value
  */
-template<typename Iter, typename Getter>
-Iter min_by(Iter begin, Iter end, Getter getCompareVal)
-{
-  if (begin == end) {
-    return end;
-  }
-  auto lowest = getCompareVal(*begin);
-  Iter lowest_it = begin;
-  for (Iter it = ++begin; it != end; ++it) {
-    auto comp = getCompareVal(*it);
-    if (comp < lowest) {
-      lowest = comp;
-      lowest_it = it;
-    }
-  }
-  return lowest_it;
-}
-
-
 void SACController::configure(
   const rclcpp_lifecycle::LifecycleNode::WeakPtr & parent,
   std::string name, std::shared_ptr<tf2_ros::Buffer> tf,
@@ -101,28 +79,7 @@ void SACController::configure(
   node->get_parameter(plugin_name_ + ".max_angular_vel", max_angular_vel_);
   node->get_parameter(plugin_name_ + ".transform_tolerance", transform_tolerance);
   transform_tolerance_ = rclcpp::Duration::from_seconds(transform_tolerance);
-
-  publisher_ = node->create_publisher<custom_interfaces::msg::Observations>("/observations", 10);
-  action_subscriber_ = node->create_subscription<geometry_msgs::msg::Twist>(
-    "/action", rclcpp::QoS(10),
-    std::bind(&SACController::actionCallback, this, std::placeholders::_1));
   global_pub_ = node->create_publisher<nav_msgs::msg::Path>("received_global_plan", 1);
-
-  odom_subscriber_ = node->create_subscription<nav_msgs::msg::Odometry>(
-  "/diffdrive_controller/odom", rclcpp::QoS(10),
-  std::bind(&SACController::odomCallback, this, std::placeholders::_1));
-}
-
-void SACController::actionCallback(const geometry_msgs::msg::Twist::SharedPtr msg)
-{
-  // Update the latest action with the received message
-  latest_action_ = *msg;
-}
-
-void SACController::odomCallback(const nav_msgs::msg::Odometry::SharedPtr msg)
-{
-  // Update the current velocity with the received message
-  current_velocity_ = msg->twist.twist;  
 }
 
 void SACController::cleanup() 
@@ -168,90 +125,18 @@ geometry_msgs::msg::TwistStamped SACController::computeVelocityCommands(
 {
   (void)goal_checker;
   (void)velocity;
-
-  //put the robot_pose in the wider scope so no repitition
-  //here we are simply converting the robot pose into the frame of the global plan which is "map"
   geometry_msgs::msg::PoseStamped robot_pose;
-
-  float path_angle;
-  float change_in_distance_to_target;
-
-  custom_interfaces::msg::Observations observation;
-  
   auto transformed_plan = transformGlobalPlan(pose, robot_pose);
-
-  auto goal_pose_it = std::find_if(
-  global_plan_.poses.begin(), global_plan_.poses.end(), [&](const auto & ps) {
-    return hypot(ps.pose.position.x, ps.pose.position.y) >= lookahead_dist_;
-  });
-
-  // If the last pose is still within lookahed distance, take the last pose
-  if (goal_pose_it == global_plan_.poses.end()) {
-    goal_pose_it = std::prev(global_plan_.poses.end());
-  }
-
-  auto goal_pose = goal_pose_it->pose;
-  observation.lookahead_x = goal_pose.position.x;
-  observation.lookahead_y = goal_pose.position.y
-
-  // observation.cost_map = *costmap_ros_->getCostmap();
-  observation.current_x = robot_pose.pose.position.x;
-  observation.current_y = robot_pose.pose.position.y;
-  last_distance_to_target_ = current_distance_to_target_;
- 
-  //find observations
-  if (!eucledianDistanceToGoal(robot_pose, goal_pose, current_distance_to_target_) 
-    || !findAngle(robot_pose, goal_pose, path_angle)){
-    throw nav2_core::PlannerException("Unable to calculate state"); 
-  }
-
-  float weights[4] = {-0.3f, 1.5f, 0.2f, -0.2f };
-  float reward = utils::claculateRewards(path_angle, current_distance_to_target_, current_velocity_, weights);
-  observation.reward = reward;
-  observation.distance_target = current_distance_to_target_;
-  observation.change_in_distance = 100 * (current_distance_to_target_ - last_distance_to_target_);;
-  observation.speed = current_velocity_.linear.x;
-  observation.angular_speed = abs(current_velocity_.angular.z);
-  observation.path_angle = path_angle;
-
-  publisher_->publish(observation);
-
+  geometry_msgs::msg::Twist() latest_action_;
   double linear_vel = latest_action_.linear.x;
   double angular_vel = latest_action_.angular.z;
-
   // Create and publish a TwistStamped message with the desired velocity
   geometry_msgs::msg::TwistStamped cmd_vel;
   cmd_vel.header.frame_id = pose.header.frame_id;
   cmd_vel.header.stamp = clock_->now();
   cmd_vel.twist.linear.x = linear_vel;
   cmd_vel.twist.angular.z = angular_vel;
-
   return cmd_vel;
-}
-
-
-bool SACController::eucledianDistanceToGoal(const geometry_msgs::msg::PoseStamped & robot_pose, const geometry_msgs::msg::PoseStamped & goal_pose, float & distance)
-{
-  if (global_plan_.poses.empty()) {
-    distance = 0.00;
-    return true;
-  }
-
-  if (robot_pose.header.frame_id != global_plan_.header.frame_id) {
-    throw nav2_core::PlannerException("Trying to calculate the distance but input pose is not in global plan frame");
-    return false;
-  }
-  distance = euclidean_distance(robot_pose, goal_pose);
-  return true;
-}
-
-bool SACController::findAngle(const geometry_msgs::msg::PoseStamped & robot_pose, const geometry_msgs::msg::PoseStamped & ref_pose, float & angle){
-  if (global_plan_.poses.empty()) {
-    angle = 0.00;
-    return true;
-  }
-  angle = utils::posePointAngle(robot_pose.pose, ref_pose.pose, true);
-  return true;
 }
 
 void SACController::setPlan(const nav_msgs::msg::Path & path)
@@ -269,7 +154,7 @@ SACController::transformGlobalPlan(
 
   if (global_plan_.poses.empty()) {
     throw nav2_core::PlannerException("Received plan with zero length");
-  }
+
 
   // Let's get the pose of the robot in the frame of the plan
   if (!transformPose(
