@@ -31,6 +31,8 @@ SACController::SACController()
 // tf_(nullptr), costmap_(nullptr)
 {
   tf_ = nullptr;
+  latest_action_ = geometry_msgs::msg::Twist();  // Initialize the latest action
+
 }
 
 SACController::~SACController()
@@ -98,6 +100,14 @@ void SACController::configure(
   node->get_parameter(plugin_name_ + ".transform_tolerance", transform_tolerance);
   transform_tolerance_ = rclcpp::Duration::from_seconds(transform_tolerance);
   global_pub_ = node->create_publisher<nav_msgs::msg::Path>("received_global_plan", 1);
+  action_sub_ = node->create_subscription<geometry_msgs::msg::Twist>(
+  "/action", rclcpp::QoS(10),
+  std::bind(&SACController::actionCallback, this, std::placeholders::_1));
+}
+
+void SACController::actionCallback(const geometry_msgs::msg::Twist::SharedPtr msg)
+{
+  latest_action_ = *msg;
 }
 
 void SACController::cleanup() 
@@ -145,7 +155,6 @@ void SACController::computeVelocityCommands(
   (void)velocity;
   geometry_msgs::msg::PoseStamped robot_pose;
   auto transformed_plan = transformGlobalPlan(pose, robot_pose);
-  geometry_msgs::msg::Twist latest_action_;
   double linear_vel = latest_action_.linear.x;
   double angular_vel = latest_action_.angular.z;
   // Create and publish a TwistStamped message with the desired velocity

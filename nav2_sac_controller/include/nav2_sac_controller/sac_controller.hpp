@@ -77,6 +77,9 @@ protected:
   rclcpp::Logger logger_ {rclcpp::get_logger("SACController")};
   rclcpp::Clock::SharedPtr clock_;
 
+  void actionCallback(const geometry_msgs::msg::Twist::SharedPtr msg); // Callback for the action subscriber
+
+
   double desired_linear_vel_;
   double lookahead_dist_;
   double max_angular_vel_;
