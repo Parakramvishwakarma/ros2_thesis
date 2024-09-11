@@ -42,6 +42,24 @@ SACController::~SACController()
 /**
  * Find element in iterator with the minimum calculated value
  */
+template<typename Iter, typename Getter>
+Iter min_by(Iter begin, Iter end, Getter getCompareVal)
+{
+  if (begin == end) {
+    return end;
+  }
+  auto lowest = getCompareVal(*begin);
+  Iter lowest_it = begin;
+  for (Iter it = ++begin; it != end; ++it) {
+    auto comp = getCompareVal(*it);
+    if (comp < lowest) {
+      lowest = comp;
+      lowest_it = it;
+    }
+  }
+  return lowest_it;
+}
+
 void SACController::configure(
   const rclcpp_lifecycle::LifecycleNode::WeakPtr & parent,
   std::string name, std::shared_ptr<tf2_ros::Buffer> tf,
