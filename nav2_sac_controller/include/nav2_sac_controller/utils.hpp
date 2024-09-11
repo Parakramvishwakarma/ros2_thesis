@@ -83,7 +83,7 @@ namespace utils
 
     float claculateRewards(float pathAngle, float current_distance_to_target_, geometry_msgs::msg::Twist current_velocity_, float weights[]) {
         //HOW CAN WE MAKE REWARD BETTER?
-        float reward = pathAngle * weights[0] + (weights[1] * current_distance_to_target_)  +  weights[2] * sqrt(current_velocity_.linear.x * current_velocity_.linear.x  + current_velocity_.linear.y * current_velocity_.linear.y)  + weights[3] * current_velocity_.angular.z ;
+        float reward = pathAngle * weights[0] + (weights[1]/current_distance_to_target_)  +  weights[2] * current_velocity_.linear.x  + weights[3] * abs(current_velocity_.angular.z) ;
         return reward;    
     }
 }

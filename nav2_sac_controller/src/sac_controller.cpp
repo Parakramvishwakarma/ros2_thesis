@@ -198,30 +198,19 @@ geometry_msgs::msg::TwistStamped SACController::computeVelocityCommands(
   change_in_distance_to_target = 100 * (current_distance_to_target_ - last_distance_to_target_);
 
 
-  float weights[4] = {-0.3f, 0.10f, 0.2f, -0.2f };
-  float reward = utils::claculateRewards(path_angle, change_in_distance_to_target, current_velocity_, weights);
+  float weights[4] = {-0.3f, 1.5f, 0.2f, -0.2f };
+  float reward = utils::claculateRewards(path_angle, current_distance_to_target_, current_velocity_, weights);
 
   observation.reward = reward;
   observation.distance_target = current_distance_to_target_;
   observation.change_in_distance =  change_in_distance_to_target;
-  observation.speed = sqrt(current_velocity_.linear.x * current_velocity_.linear.x  + current_velocity_.linear.y * current_velocity_.linear.y);
+  observation.speed = current_velocity_.linear.x;
   observation.angular_speed = abs(current_velocity_.angular.z);
 
   observation.goal_angle = goal_angle;
   observation.path_angle = path_angle;
 
   publisher_->publish(observation);
-
-  // // Find the first pose which is at a distance greater than the specified lookahed distance
-  // auto goal_pose_it = std::find_if(
-  //   transformed_plan.poses.begin(), transformed_plan.poses.end(), [&](const auto & ps) {
-  //     return hypot(ps.pose.position.x, ps.pose.position.y) >= lookahead_dist_;
-  //   });
-
-  // // If the last pose is still within lookahed distance, take the last pose
-  // if (goal_pose_it == transformed_plan.poses.end()) {
-  //   goal_pose_it = std::prev(transformed_plan.poses.end());
-  // }
 
   double linear_vel = latest_action_.linear.x;
   double angular_vel = latest_action_.angular.z;

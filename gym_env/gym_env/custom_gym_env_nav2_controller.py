@@ -84,7 +84,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
         super(CustomGymnasiumEnvNav2, self).__init__()
         rclpy.init()
         self.counter = 0
-        self.episode_length = 1000
+        self.episode_length = 2000
         #inititalise variables
 
         self.data = {
@@ -97,7 +97,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
             'angular_speed' : []
         }
 
-        self.plot_interval = 400  # Interval for plotting
+        self.plot_interval = 1000  # Interval for plotting
         self.angularVelocityCounter = 0
         self.lastAngVelocity = None
         self.pathAngle = None
@@ -124,7 +124,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
         #set reward parameters
         self.beta = 3
         #this is the one for the closest obstacle 
-        self.gamma  = -0.35
+        self.gamma  = -0.2
         self.alpha = 0.2
 
         #scanner parameters
@@ -164,6 +164,8 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.counter += 1
         linear_vel = action[0] * 5.0  
         angular_vel = action[1] * 3.14 
+        self.publishNode.sendAction(linear_vel, angular_vel)
+
 
         self.subscribeNode.get_logger().info(f"Angular {angular_vel}")
         self.subscribeNode.get_logger().info(f"Count {self.counter}")
@@ -205,8 +207,8 @@ class CustomGymnasiumEnvNav2(gym.Env):
             self.pathAngle = observation_data.path_angle
             self.changeInDistanceToTarget = observation_data.change_in_distance
             
-            self.linearVelocity= round(((observation_data.speed))) 
-            self.angularVelocity = round(observation_data.angular_speed)
+            self.linearVelocity= round(observation_data.speed, 2) 
+            self.angularVelocity = round(observation_data.angular_speed,2)
 
             #this is us updating the reward class variable with 
             self._calculateReward()
@@ -245,7 +247,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
 
         # Check if it's time to plot
         if len(self.data['reward']) % self.plot_interval == 0:
-            df = pd.DataFrame.from_dict(self.data, orient="index")
+            df = pd.DataFrame.from_dict(self.data)
             df.to_csv("data.csv")
         return observation, self.reward, terminated, truncated, {}
     
@@ -267,7 +269,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
 
         else:
             self._setNewTargetAndInitial()
-            self.publishNode.send_initial_pose(self.intial_pose)
+            # self.publishNode.send_initial_pose(self.intial_pose)
 
         self.publishNode.send_goal_pose(self.target_pose)
 
@@ -277,16 +279,20 @@ class CustomGymnasiumEnvNav2(gym.Env):
 
         scan_data = self.subscribeNode.scan_data
         observation_data = self.subscribeNode.observationData
-        odom_data = self.subscribeNode.odom_data
 
-        if scan_data and observation_data and odom_data:
+        if scan_data and observation_data:
+            self.reward = observation_data.reward
+            self.closestObstacle = min(scan_data.ranges)  #find the closest obstacle
             lidar_observation = self._roundLidar(scan_data.ranges)
             self.updateLidar(lidar_observation)
-            self.newDistanceToTarget = observation_data[2]
-            self.goalAngle = observation_data[0]
-            self.pathAngle = observation_data[1]
-            self.linearVelocity= round(((observation_data.speed))) 
-            self.angularVelocity = round(observation_data.angular_speed)
+            self.currentPose = [observation_data.current_x, observation_data.current_y]
+            self.goalPose = [self.target_pose.position.x, self.target_pose.position.y]
+            self.newDistanceToTarget = observation_data.distance_target
+            self.goalAngle = observation_data.goal_angle
+            self.pathAngle = observation_data.path_angle
+            self.linearVelocity= round(observation_data.speed, 2) 
+            self.angularVelocity = round(observation_data.angular_speed,2)
+
             observation = {
                 'lidar': self.lidarTracking,
                 'linear_velocity': self.linearVelocity,
@@ -309,8 +315,8 @@ class CustomGymnasiumEnvNav2(gym.Env):
     def _setNewTargetAndInitial(self):
         self.target_pose.position.x = float(np.random.randint(-4,14))
         self.target_pose.position.y = float(np.random.randint(-9, 9))
-        self.intial_pose.position.x = float(np.random.randint(-4,14))
-        self.intial_pose.position.y = float(np.random.randint(-9, 9))
+        # self.intial_pose.position.x = float(np.random.randint(-4,14))
+        # self.intial_pose.position.y = float(np.random.randint(-9, 9))
 
     def _calculateReward(self):
         obstacleReward = 0
@@ -325,6 +331,9 @@ class CustomGymnasiumEnvNav2(gym.Env):
             return True
         elif self.closestObstacle < 0.5:
             self.subscribeNode.get_logger().info("Terminated WE HIT AN OBSTACLE")
+            linear_vel = 5.0  
+            angular_vel = action[1] * 3.14 
+            self.publishNode.sendAction(linear_vel, angular_vel)
             self.reward = -1
             return True
         elif self.angularVelocityCounter >= 30:
@@ -346,29 +355,6 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.subscribeNode.get_logger().info(f"The current distace to the target is: {self.newDistanceToTarget} m")
         # self.subscribeNode.get_logger().info(f"The the change in distance to target is {self.changeInDistanceToTarget}m")
 
-    def plot_data(self):
-        """Creates a plot of path_angle, goal_angle, distance to target, and reward against timesteps."""
-        plt.figure(figsize=(12, 8))
-
-        # Plot each variable against the timestep number
-        plt.plot(self.data['timesteps'], self.data['path_angle'], label='Path Angle', color='blue')
-        plt.plot(self.data['timesteps'], self.data['change_distance'], label='Change in distance', color='green')
-        plt.plot(self.data['timesteps'], self.data['distance_to_target'], label='Distance to Target', color='red')
-        plt.plot(self.data['timesteps'], self.data['speed'], label='Speed', color='yellow')
-        plt.plot(self.data['timesteps'], self.data['angular_speed'], label='Angular Speed', color='black')
-        plt.plot(self.data['timesteps'], self.data['reward'], label='Reward', color='orange')
-
-        # Set labels and title
-        plt.xlabel('Timestep Number')
-        plt.ylabel('Values')
-        plt.title('Path Angle, Goal Angle, Distance to Target, and Reward vs Timestep')
-        plt.grid(True)
-        plt.legend()
-
-        # Optimize layout and display
-        plt.tight_layout()
-        plt.show()
-    
     def updateLidar(self, lidarObservation):
         # self.subscribeNode.get_logger().info(f"Length of rounded lidar {len(lidarObservation)}")
         self.lidarTracking[2] = self.lidarTracking[1]
