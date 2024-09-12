@@ -7,12 +7,17 @@ import math as m
 from rclpy.node import Node
 from sensor_msgs.msg import LaserScan
 from nav2_msgs.msg import ParticleCloud
+from nav2_msgs.srv import ClearEntireCostmap
 from rclpy.qos import qos_profile_sensor_data
 from geometry_msgs.msg import Pose, PoseWithCovarianceStamped, Twist, PoseStamped, Point
 from nav_msgs.msg import Odometry, Path, OccupancyGrid
 from map_msgs.msg import OccupancyGridUpdate
+from nav2_msgs.action import BackUp, Spin
+from rclpy.action import ActionClient
 import time
 from rclpy.qos import QoSProfile, QoSDurabilityPolicy, QoSReliabilityPolicy
+from builtin_interfaces.msg import Duration
+
 
 
 class Subscriber(Node):
@@ -55,9 +60,7 @@ class Subscriber(Node):
             '/amcl_pose',
             self.pose_callback,
             qos_profile)
-        
-        self.subscription_pose 
-
+    
 
         self.scan_data = None
         self.speed_data = None
@@ -98,7 +101,19 @@ class Publisher(Node):
         self.publish_initial_pose = self.create_publisher(PoseWithCovarianceStamped, '/initialpose', 10)
         self.publish_goal_pose = self.create_publisher(PoseStamped, '/goal_pose', 10)
         self.publishAction = self.create_publisher(Twist, '/cmd_vel', 10)
-    
+
+        #these are action clients to get my robot out of trouble after collision
+        self.backup_client = ActionClient(self, BackUp, '/backup')
+        self.spin_client = ActionClient(self, Spin, '/spin')
+
+        #services to clear the global and the local costmap:
+        self.local_costmap_clear_client = self.create_client(ClearEntireCostmap, '/local_costmap/clear_entirely_local_costmap')
+        self.global_costmap_clear_client = self.create_client(ClearEntireCostmap, '/local_costmap/clear_entirely_local_costmap')
+        
+        # Ensure service servers are available
+        self.local_costmap_clear_client.wait_for_service(timeout_sec=5.0)
+        self.global_costmap_clear_client.wait_for_service(timeout_sec=5.0)
+
     def sendAction(self, linearVel, angularVel):
         msg = Twist()
         msg.linear.x = float(linearVel)
@@ -122,6 +137,40 @@ class Publisher(Node):
         goalPose_pose.header.frame_id = "map"
         goalPose_pose.pose = pose
         self.publish_goal_pose.publish(goalPose_pose)
+    
+    def send_backup_goal(self):
+        goal_msg = BackUp.Goal()
+        goal_msg.target = Point(x=1.0, y=0.0, z=0.0)
+        goal_msg.speed = float(0.1)
+        goal_msg.time_allowance = Duration(sec=5, nanosec=0)  # Adjust as needed
+        self.backup_client.wait_for_server()
+        self.backup_client.send_goal_async(goal_msg)
+        # self.backup_client.wait_for_result()
+
+    def send_spin_goal(self):
+        goal_msg = Spin.Goal()
+        goal_msg.target_yaw = float(1.57)
+        self.spin_client.wait_for_server()
+        self.spin_client.send_goal_async(goal_msg)
+        # self.spin_client.wait_for_result()
+    
+    def clear_local_costmap(self):
+        self.get_logger().info("Clearing local costmap...")
+        future = self.local_costmap_clear_client.call_async(ClearEntireCostmap.Request())
+        rclpy.spin_until_future_complete(self, future)
+        if future.result() is not None:
+            self.get_logger().info("Successfully cleared local costmap.")
+        else:
+            self.get_logger().error(f"Failed to clear local costmap: {future.exception()}")
+
+    def clear_global_costmap(self):
+        self.get_logger().info("Clearing global costmap...")
+        future = self.global_costmap_clear_client.call_async(ClearEntireCostmap.Request())
+        rclpy.spin_until_future_complete(self, future)
+        if future.result() is not None:
+            self.get_logger().info("Successfully cleared global costmap.")
+        else:
+            self.get_logger().error(f"Failed to clear global costmap: {future.exception()}")
 
 class CustomGymnasiumEnvNav2(gym.Env):
     def __init__(self):
@@ -156,7 +205,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.angularVelocity = None
         self.lidarTracking = np.zeros((3, 640), dtype=np.float32)
         self.collision = False
-
+        self.pathArrayConverted = []
 
         #this is the param for how many poses ahead the path we look to find the path angle
         self.lookAheadDist = 40 
@@ -170,9 +219,9 @@ class CustomGymnasiumEnvNav2(gym.Env):
 
         #set reward parameters
         self.alpha = -0.2 #this one is for the path angle
-        self.beta = 1.5 # this one is for the distance from the target
-        self.gamma  = -0.2 #this is for closest obstacle
-        self.roh = 0.2 #this is for linear.x speed
+        self.beta = 2 # this one is for the distance from the target
+        self.gamma  = -0.45 #this is for closest obstacle
+        self.roh = 0.25 #this is for linear.x speed
         self.mu  = -0.2 #this is penalty for spinnging
     
         #scanner parameters
@@ -195,10 +244,12 @@ class CustomGymnasiumEnvNav2(gym.Env):
             'angular_velocity': spaces.Box(low=-3.14, high=3.14, shape=(1,), dtype=np.float32),
             'goal_pose': spaces.Box(low=-100.0, high=100.0, shape=(2,), dtype=np.float32),
             'current_pose': spaces.Box(low=-100.0, high=100.0, shape=(2,), dtype=np.float32),
+            # 'global_path': spaces.Box(low=-50.0, high=50.0, shape=(400,2), dtype=np.float32),
         })
 
     def _initialise(self):
         self.angularVelocityCounter = 0
+        self.pathArrayConverted = []
         self.collision = False
         self.lastAngVelocity = None
         self.pathAngle = None
@@ -228,7 +279,6 @@ class CustomGymnasiumEnvNav2(gym.Env):
         linear_vel = action[0] * 5.0  
         angular_vel = action[1] * 3.14 
         self.publishNode.sendAction(linear_vel, angular_vel) #send action from the model
-        self.subscribeNode.get_logger().info(f"This is the new action {linear_vel}, {angular_vel}")
 
         rclpy.spin_once(self.publishNode, timeout_sec=1.0)
     
@@ -256,9 +306,9 @@ class CustomGymnasiumEnvNav2(gym.Env):
      
         #get udpated observations from odometry
         if ( self.scan_data and self.speed_twist and self.currentPose and self.pathArray):
-            self.subscribeNode.get_logger().info(f"Count {len(self.pathArray)}")
             if self.counter ==1:
                 self.subscribeNode.get_logger().info("Running New Episode")
+            # self._convertPathArray()
 
             self.closestObstacle = min(self.scan_data.ranges)  #find the closest obstacle
             self._roundLidar()
@@ -277,6 +327,8 @@ class CustomGymnasiumEnvNav2(gym.Env):
 
             #this is us updating the reward class variable with 
             self._calculateReward()
+  
+
             #this will check the terminal conditions and if its terminated update self.reward accordingly
             terminated = self._checkTerminalConditions()
             observation = {
@@ -285,6 +337,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
                 'angular_velocity': self.angularVelocity,
                 'goal_pose': [self.target_pose.position.x, self.target_pose.position.y],
                 'current_pose': [self.currentPose.position.x, self.currentPose.position.y] ,
+                # 'global_path': self.pathArrayConverted
             }
         else:
             self.subscribeNode.get_logger().info("Scan or observation data missing")
@@ -302,7 +355,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
 
         end_time = time.perf_counter()  # End the timer
         execution_time = end_time - start_time  # Calculate the elapsed time
-        self.subscribeNode.get_logger().info(f"Step function execution time: {execution_time:.6f} seconds")
+        # self.subscribeNode.get_logger().info(f"Step function execution time: {execution_time:.6f} seconds")
         return observation, self.reward, terminated, truncated, {}
     
 
@@ -311,6 +364,11 @@ class CustomGymnasiumEnvNav2(gym.Env):
         #check if we have collided with an obstacle if so then run the backup and spin
         if self.collision:
             self._backup_and_spin()
+
+        #reset the costmaps
+        self.publishNode.clear_local_costmap()
+        self.publishNode.clear_global_costmap()
+        
         #reset variables
         self._initialise()
         #stop the robot
@@ -352,12 +410,14 @@ class CustomGymnasiumEnvNav2(gym.Env):
             self.newDistanceToTarget = self._getDistance()
             self.linearVelocity= round(self.speed_twist.linear.x, 2) 
             self.angularVelocity = round(self.speed_twist.angular.z,2)
+            # self._convertPathArray()
             observation = {
                 'lidar': self.lidarTracking,
                 'linear_velocity': self.linearVelocity,
                 'angular_velocity': self.angularVelocity,
                 'goal_pose': [self.target_pose.position.x, self.target_pose.position.y],
                 'current_pose': [self.currentPose.position.x, self.currentPose.position.y] ,
+                # 'global_path': self.pathArrayConverted
             }
         else:
             observation = self.observation_space.sample()  # Return a random observation within space
@@ -375,13 +435,22 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.target_pose.position.x = float(np.random.randint(-4,14))
         self.target_pose.position.y = float(np.random.randint(-9, 9))
       
+    def _convertPathArray(self):
+        self.pathArrayConverted = np.zeros((400, 2), dtype=np.float32)  
+        path_length = min(len(self.pathArray), 400) 
+        for i in range(path_length):
+            self.pathArrayConverted[i] = [self.pathArray[i].pose.position.x, self.pathArray[i].pose.position.y]
+        
 
     def _calculateReward(self):
         obstacleReward = 0
         self.reward = self.pathAngle * self.alpha + (self.beta/self.newDistanceToTarget) + self.roh * self.linearVelocity + self.mu * self.angularVelocity
-        if self.closestObstacle < 2:
+        # self.reward = self.pathAngle * self.alpha + (self.beta * self.changeInDistanceToTarget) + self.roh * self.linearVelocity + self.mu * self.angularVelocity
+        if self.closestObstacle < 1.5:
             obstacleReward = (self.gamma)* (1 / self.closestObstacle) # this means a max pentaly possible is around -0.75
         self.reward += obstacleReward
+        self.subscribeNode.get_logger().info(f"obs: {self.closestObstacle}, heading: {self.pathAngle}, dist: {self.newDistanceToTarget}, vel: {self.linearVelocity}")
+        self.subscribeNode.get_logger().info(f"The reward is {self.reward}")
 
     def _checkTerminalConditions(self): 
         if self.newDistanceToTarget < 0.5:
@@ -436,7 +505,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
         heading_angle = desired_heading - current_yaw
 
         # Normalize the heading angle to the range [-pi, pi]
-        heading_angle = (heading_angle + m.pi) % (2 * m.pi) - m.pi
+        heading_angle = abs((heading_angle + m.pi) % (2 * m.pi) - m.pi)
 
         return heading_angle
     
@@ -458,21 +527,13 @@ class CustomGymnasiumEnvNav2(gym.Env):
         """
         Backs up and spins the robot 180 degrees if a collision is detected.
         """
-        # Back up straight
-        self.publishNode.sendAction(-1.0, 0.0)  # Backward linear velocity
-        time.sleep(1.5)  # Duration for backing up
+        # Send backup action
+        self.publishNode.send_backup_goal() 
 
-        # Spin in place
-        self.publishNode.sendAction(0.0, m.pi)  # Angular velocity for 180 degree turn
-        time.sleep(2.0)  # Duration to spin around
-
-        # Stop the robot
-        self.publishNode.sendAction(0.0, 0.0)
-        time.sleep(1.0)  # Ensure the robot stops completely
+        # Send spin action
+        self.publishNode.send_spin_goal()  # Spin 180 degrees
 
         self.subscribeNode.get_logger().info("Executed backup and spin recovery maneuver")
-    
-
 
 
 
