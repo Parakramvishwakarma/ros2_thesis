@@ -100,7 +100,7 @@ void SACController::configure(
   node->get_parameter(plugin_name_ + ".transform_tolerance", transform_tolerance);
   transform_tolerance_ = rclcpp::Duration::from_seconds(transform_tolerance);
   global_pub_ = node->create_publisher<nav_msgs::msg::Path>("received_global_plan", 1);
-  action_sub_ = node->create_subscription<geometry_msgs::msg::Twist>(
+  action_subscriber_ = node->create_subscription<geometry_msgs::msg::Twist>(
   "/action", rclcpp::QoS(10),
   std::bind(&SACController::actionCallback, this, std::placeholders::_1));
 }
@@ -146,7 +146,7 @@ void SACController::setSpeedLimit(const double& speed_limit, const bool& percent
   (void) percentage;
 }
 
-void SACController::computeVelocityCommands(
+geometry_msgs::msg::TwistStamped  SACController::computeVelocityCommands(
   const geometry_msgs::msg::PoseStamped & pose,
   const geometry_msgs::msg::Twist & velocity,
   nav2_core::GoalChecker * goal_checker)
@@ -163,7 +163,7 @@ void SACController::computeVelocityCommands(
   cmd_vel.header.stamp = clock_->now();
   cmd_vel.twist.linear.x = linear_vel;
   cmd_vel.twist.angular.z = angular_vel;
-  // return cmd_vel;
+  return cmd_vel;
 }
 
 void SACController::setPlan(const nav_msgs::msg::Path & path)

@@ -97,7 +97,7 @@ class Publisher(Node):
         super().__init__('publisher')
         self.publish_initial_pose = self.create_publisher(PoseWithCovarianceStamped, '/initialpose', 10)
         self.publish_goal_pose = self.create_publisher(PoseStamped, '/goal_pose', 10)
-        self.publishAction = self.create_publisher(Twist, '/cmd_vel', 10)
+        self.publishAction = self.create_publisher(Twist, '/action', 10)
     
     def sendAction(self, linearVel, angularVel):
         msg = Twist()
@@ -155,6 +155,8 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.linearVelocity = None
         self.angularVelocity = None
         self.lidarTracking = np.zeros((3, 640), dtype=np.float32)
+        self.collision = False
+
 
         #this is the param for how many poses ahead the path we look to find the path angle
         self.lookAheadDist = 40 
@@ -197,6 +199,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
 
     def _initialise(self):
         self.angularVelocityCounter = 0
+        self.collision = False
         self.lastAngVelocity = None
         self.pathAngle = None
         self.goalAngle = None
@@ -219,6 +222,8 @@ class CustomGymnasiumEnvNav2(gym.Env):
     
     def step(self, action):
         #the function includes a step counter to keep track of terminal //..condition
+        start_time = time.perf_counter()  # Start the timer
+
         self.counter += 1
         linear_vel = action[0] * 5.0  
         angular_vel = action[1] * 3.14 
@@ -227,14 +232,14 @@ class CustomGymnasiumEnvNav2(gym.Env):
 
         rclpy.spin_once(self.publishNode, timeout_sec=1.0)
     
-        if self.lastAngVelocity == None:
-            self.lastAngVelocity = round(angular_vel, 3)
-        else:   
-            if self.lastAngVelocity == round(angular_vel, 3):
-                self.angularVelocityCounter += 1
-                self.subscribeNode.get_logger().info(f"repetitive omega #:{self.angularVelocityCounter}")
-            else:
-                self.lastAngVelocity = round(angular_vel, 3)        
+        # if self.lastAngVelocity == None:
+        #     self.lastAngVelocity = round(angular_vel, 3)
+        # else:   
+        #     if self.lastAngVelocity == round(angular_vel, 3):
+        #         self.angularVelocityCounter += 1
+        #         self.subscribeNode.get_logger().info(f"repetitive omega #:{self.angularVelocityCounter}")
+        #     else:
+        #         self.lastAngVelocity = round(angular_vel, 3)        
 
         # Wait for new scan and pose data
         rclpy.spin_once(self.subscribeNode, timeout_sec=1.0)
@@ -248,19 +253,10 @@ class CustomGymnasiumEnvNav2(gym.Env):
         # This doesn't neccesarily need to be stored here, what we wil do is 
         # that if there is an update we will just simply update the global map variable
         # self.mapUpdateData = self.subscribeNode.map_update
-        if not self.scan_data:
-            self.subscribeNode.get_logger().info("Scan not present")
-        if not self.speed_twist:
-            self.subscribeNode.get_logger().info("speed not present")
-        if not self.currentPose:
-            self.subscribeNode.get_logger().info("current pose not present")
-        if not self.pathArray:
-            self.subscribeNode.get_logger().info("plan not present")
-
+     
         #get udpated observations from odometry
         if ( self.scan_data and self.speed_twist and self.currentPose and self.pathArray):
             self.subscribeNode.get_logger().info(f"Count {len(self.pathArray)}")
-
             if self.counter ==1:
                 self.subscribeNode.get_logger().info("Running New Episode")
 
@@ -270,10 +266,12 @@ class CustomGymnasiumEnvNav2(gym.Env):
             self.lastDistanceToTarget = self.newDistanceToTarget
             self.newDistanceToTarget = self._getDistance()
             # self.goalAngle = self._getGoalAngle()
-            self.pathAngle = self._calculate_heading_angle(self.currentPose, self.pathArray[self.lookAheadDist].pose)
+            if len(self.pathArray) > self.lookAheadDist:
+                self.pathAngle = self._calculate_heading_angle(self.currentPose, self.pathArray[self.lookAheadDist].pose)
+            else:
+                self.pathAngle = self._calculate_heading_angle(self.currentPose, self.pathArray[-1].pose)
             if self.lastDistanceToTarget:
                 self.changeInDistanceToTarget = self.newDistanceToTarget - self.lastDistanceToTarget
-            
             self.linearVelocity= round(self.speed_twist.linear.x, 2) 
             self.angularVelocity = round(self.speed_twist.angular.z,2)
 
@@ -302,24 +300,17 @@ class CustomGymnasiumEnvNav2(gym.Env):
         else:
             truncated = False
 
-        # Store values for plotting
-        self.data['timesteps'].append(self.counter)
-        self.data['path_angle'].append(self.pathAngle)
-        self.data['change_distance'].append(self.changeInDistanceToTarget)
-        self.data['distance_to_target'].append(self.newDistanceToTarget)
-        self.data['reward'].append(self.reward)
-        self.data['speed'].append(self.linearVelocity)
-        self.data['angular_speed'].append(self.angularVelocity)
-
-        # Check if it's time to plot
-        if len(self.data['reward']) % self.plot_interval == 0:
-            df = pd.DataFrame.from_dict(self.data)
-            df.to_csv("data.csv")
+        end_time = time.perf_counter()  # End the timer
+        execution_time = end_time - start_time  # Calculate the elapsed time
+        self.subscribeNode.get_logger().info(f"Step function execution time: {execution_time:.6f} seconds")
         return observation, self.reward, terminated, truncated, {}
     
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed, options=options)
+        #check if we have collided with an obstacle if so then run the backup and spin
+        if self.collision:
+            self._backup_and_spin()
         #reset variables
         self._initialise()
         #stop the robot
@@ -383,13 +374,12 @@ class CustomGymnasiumEnvNav2(gym.Env):
     def _setNewTargetAndInitial(self):
         self.target_pose.position.x = float(np.random.randint(-4,14))
         self.target_pose.position.y = float(np.random.randint(-9, 9))
-        # self.intial_pose.position.x = float(np.random.randint(-4,14))
-        # self.intial_pose.position.y = float(np.random.randint(-9, 9))
+      
 
     def _calculateReward(self):
         obstacleReward = 0
         self.reward = self.pathAngle * self.alpha + (self.beta/self.newDistanceToTarget) + self.roh * self.linearVelocity + self.mu * self.angularVelocity
-        if self.closestObstacle < 6:
+        if self.closestObstacle < 2:
             obstacleReward = (self.gamma)* (1 / self.closestObstacle) # this means a max pentaly possible is around -0.75
         self.reward += obstacleReward
 
@@ -398,14 +388,12 @@ class CustomGymnasiumEnvNav2(gym.Env):
             self.reward = 1
             return True
         elif self.closestObstacle < 0.5:
-            self.subscribeNode.get_logger().info("Terminated WE HIT AN OBSTACLE")
-            linear_vel = -5.0  
-            angular_vel = 0 
-            self.publishNode.sendAction(linear_vel, angular_vel)
+            self.collision = True
+            self.subscribeNode.get_logger().info("TERMINATED - COLLISION WITH OBSTACLE")
             self.reward = -1
             return True
         elif self.angularVelocityCounter >= 30:
-            self.subscribeNode.get_logger().info("Terminated We are in a circular loop")
+            self.subscribeNode.get_logger().info("TERMINATED - CIRCULAR LOOP")
             self.reward = -1
             return True
         else:
@@ -414,16 +402,10 @@ class CustomGymnasiumEnvNav2(gym.Env):
     def _roundLidar(self):
         # Ensure self.scan_data.ranges is a numpy array first
         ranges_array = np.array(self.scan_data.ranges, dtype=np.float32)
-
         # Replace infinite values with 12 and ensure the result is a numpy array of floats
         processed_ranges = np.where(np.isinf(ranges_array), 12.0, ranges_array).astype(float)
-
         # Convert back to list if required by the LaserScan message
         self.scan_data.ranges = processed_ranges.tolist()
-
-        # Ensure that all values are within the acceptable range of float values
-        # assert all(isinstance(x, float) and -3.4e38 <= x <= 3.4e38 for x in self.scan_data.ranges), \
-        #     "All elements of 'ranges' must be floats within the acceptable range."
 
     def _getDistance(self):
         delta_x = self.target_pose.position.x - self.currentPose.position.x
@@ -471,6 +453,25 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.lidarTracking[2] = self.lidarTracking[1]
         self.lidarTracking[1] = self.lidarTracking[0]
         self.lidarTracking[0] = self.scan_data.ranges
+
+    def _backup_and_spin(self):
+        """
+        Backs up and spins the robot 180 degrees if a collision is detected.
+        """
+        # Back up straight
+        self.publishNode.sendAction(-1.0, 0.0)  # Backward linear velocity
+        time.sleep(1.5)  # Duration for backing up
+
+        # Spin in place
+        self.publishNode.sendAction(0.0, m.pi)  # Angular velocity for 180 degree turn
+        time.sleep(2.0)  # Duration to spin around
+
+        # Stop the robot
+        self.publishNode.sendAction(0.0, 0.0)
+        time.sleep(1.0)  # Ensure the robot stops completely
+
+        self.subscribeNode.get_logger().info("Executed backup and spin recovery maneuver")
+    
 
 
 
