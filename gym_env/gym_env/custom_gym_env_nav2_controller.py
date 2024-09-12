@@ -97,7 +97,7 @@ class Publisher(Node):
         super().__init__('publisher')
         self.publish_initial_pose = self.create_publisher(PoseWithCovarianceStamped, '/initialpose', 10)
         self.publish_goal_pose = self.create_publisher(PoseStamped, '/goal_pose', 10)
-        self.publishAction = self.create_publisher(Twist, '/action', 10)
+        self.publishAction = self.create_publisher(Twist, '/cmd_vel', 10)
     
     def sendAction(self, linearVel, angularVel):
         msg = Twist()
