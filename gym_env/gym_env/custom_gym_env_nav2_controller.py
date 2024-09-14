@@ -217,6 +217,9 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.pathArrayConverted = []
         self.obstacleAngle = None
 
+        self.closestPathPointIndex  = None
+        self.closestPathDistance = None
+
         #this is the param for how many poses ahead the path we look to find the path angle
         self.lookAheadDist = 40 
 
@@ -283,7 +286,8 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.pathArray = None
         self.mapArray = None
         self.mapUpdateData = None
-    
+        self.closestPathPointIndex  = None
+        self.closestPathDistance = None
     def step(self, action):
         #the function includes a step counter to keep track of terminal //..condition
         start_time = time.perf_counter()  # Start the timer
@@ -325,10 +329,8 @@ class CustomGymnasiumEnvNav2(gym.Env):
             self.lastDistanceToTarget = self.newDistanceToTarget
             self.newDistanceToTarget = self._getDistance()
 
-            if len(self.pathArray) > self.lookAheadDist:
-                self.pathAngle = self._calculate_heading_angle(self.currentPose, self.pathArray[self.lookAheadDist].pose)
-            else:
-                self.pathAngle = self._calculate_heading_angle(self.currentPose, self.pathArray[-1].pose)
+            self._find_closest_path_point_and_distance() #this will update the class variables for closets point index and distance
+            self.pathAngle = self._findPathAngle()
             if self.lastDistanceToTarget:
                 self.changeInDistanceToTarget = self.newDistanceToTarget - self.lastDistanceToTarget
             self.linearVelocity= round(self.speed_twist.linear.x, 2) 
@@ -427,11 +429,9 @@ class CustomGymnasiumEnvNav2(gym.Env):
             self._updateLidar()
             self.newDistanceToTarget = self._getDistance()
             self.linearVelocity= round(self.speed_twist.linear.x, 2) 
-            self.angularVelocity = round(self.speed_twist.angular.z,2)
-            if len(self.pathArray) > self.lookAheadDist:
-                self.pathAngle = self._calculate_heading_angle(self.currentPose, self.pathArray[self.lookAheadDist].pose)
-            else:
-                self.pathAngle = self._calculate_heading_angle(self.currentPose, self.pathArray[-1].pose)
+            self.angularVelocity = round(self.speed_twist.angular.z,2) 
+            self._find_closest_path_point_and_distance() #this will update the class variables for closets point index and distance
+            self.pathAngle = self._findPathAngle()
             self._convertPathArray()
             self.subscribeNode.get_logger().info(f"{self.linearVelocity} ,{self.angularVelocity} {self.pathAngle}, {self.relativeGoal}")
             observation = {
@@ -467,14 +467,15 @@ class CustomGymnasiumEnvNav2(gym.Env):
 
     def _calculateReward(self):
         # Coefficients for each reward component
-        alpha = -0.5  # Penalty for deviation from the path (heading angle)
-        beta = 3.0    # Reward for reducing distance to the goal
-        gamma = -0.3  # Penalty for proximity to obstacles
-        roh = 0.5     # Reward for maintaining linear speed
+        alpha = -0.5  # Penalty for deviation from the path (heading error)
+        beta = 2.5    # Reward for reducing distance to the goal
+        gamma = -0.5  # Penalty for proximity to obstacles
+        roh = 0.4     # Reward for maintaining linear speed
         mu = -0.1     # Penalty for high angular velocity
+        delta = -0.8  # Path deviation penalty
         time_penalty = -0.005  # Small penalty per time step
         goal_reached_bonus = 100  # Large bonus for reaching the goal
-        collision_penalty = -50  # High penalty for collisions
+        collision_penalty = -100  # High penalty for collisions
 
         # Base reward
         reward = 0
@@ -502,6 +503,8 @@ class CustomGymnasiumEnvNav2(gym.Env):
         # Add a small time penalty to encourage quicker task completion
         # reward += self.counter * time_penalty
 
+        reward += delta * self.closestPathDistance  # Penalize deviations
+
         # Check for terminal conditions and apply appropriate rewards/penalties
         if self.newDistanceToTarget < 0.5:  # Goal reached
             reward += goal_reached_bonus
@@ -516,7 +519,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
             self.subscribeNode.get_logger().info("TERMINATED - COLLISION WITH OBSTACLE")
 
         self.reward = reward
-        self.subscribeNode.get_logger().info(f"obs: {self.closestObstacle}, heading: {self.pathAngle}, dist: {self.newDistanceToTarget}, vel: {self.linearVelocity}")
+        self.subscribeNode.get_logger().info(f"obs: {self.closestObstacle}, heading: {self.pathAngle}, dist: {self.newDistanceToTarget}, path_dev: {self.closestPathDistance} vel: {self.linearVelocity}")
         self.subscribeNode.get_logger().info(f"The reward is {self.reward}")
         return reward
 
@@ -619,6 +622,40 @@ class CustomGymnasiumEnvNav2(gym.Env):
         y_relative = -dx * m.sin(yaw_robot) + dy * m.cos(yaw_robot)
         
         self.relativeGoal =  np.array([x_relative, y_relative]).astype(float)
+
+    def _find_closest_path_point_and_distance(self):
+        """
+        Find the closest point on the path to the robot's current position.
+        """
+        if not self.pathArray:
+            return None  # Return None if no path is available
+
+        min_distance = float('inf')
+        closest_point_index = 0
+        robot_x = self.currentPose.position.x
+        robot_y = self.currentPose.position.y
+
+        # Iterate through each waypoint in the path
+        for i, waypoint in enumerate(self.pathArray):
+            path_x = waypoint.pose.position.x
+            path_y = waypoint.pose.position.y
+
+            # Calculate Euclidean distance to the waypoint
+            distance = m.sqrt((robot_x - path_x) ** 2 + (robot_y - path_y) ** 2)
+
+            # Update minimum distance and index
+            if distance < min_distance:
+                min_distance = distance
+                closest_point_index = i
+
+        self.closestPathDistance = min_distance
+        self.closestPathPointIndex =  closest_point_index
+
+    def _findPathAngle(self):
+        lookaheadPointIndex = min(self.closestPathPointIndex + 20, len(self.pathArray) - 1)
+        lookAhead = self.pathArray[lookaheadPointIndex].pose
+        return self._calculate_heading_angle(self.currentPose, lookAhead)
+        
 
 
 
