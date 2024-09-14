@@ -147,18 +147,21 @@ class Publisher(Node):
         self.backup_client.wait_for_server()
         future = self.backup_client.send_goal_async(goal_msg)
         rclpy.spin_until_future_complete(self, future)
-        if future.result().status == 4:
-            self.get_logger().info("Backup completed successfully")
-        else:
-            self.get_logger().error("Backup action failed")
+        # if future.result().status == 4:
+        #     self.get_logger().info("Backup completed successfully")
+        # else:
+        #     self.get_logger().error("Backup action failed")
 
 
-    # def send_spin_goal(self):
-        # goal_msg = Spin.Goal()
-        # goal_msg.target_yaw = float(1.57)
-        # self.spin_client.wait_for_server()
-        # self.spin_client.send_goal_async(goal_msg)
-        # # self.spin_client.wait_for_result()
+    def send_spin_goal(self):
+        goal_msg = Spin.Goal()
+        goal_msg.target_yaw = float(1.57)
+        self.get_logger().info("Sending Spin goal")
+        self.spin_client.wait_for_server()
+        future = self.spin_client.send_goal_async(goal_msg)
+        rclpy.spin_until_future_complete(self, future)
+
+        # self.spin_client.wait_for_result()
     
     def clear_local_costmap(self):
         self.get_logger().info("Clearing local costmap...")
@@ -222,6 +225,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
 
         #define the target pose for training
         self.target_pose = None
+        self.relativeGoal = None
 
         #set reward parameters
         self.alpha = -0.25 #this one is for the path angle
@@ -247,13 +251,14 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.observation_space = spaces.Dict({
             'lidar': spaces.Box(low=0, high=12, shape=(3,640), dtype=np.float32),
             'linear_velocity': spaces.Box(low=0, high=5, shape=(1,), dtype=np.float32),
-            'angular_velocity': spaces.Box(low=-3.14, high=3.14, shape=(1,), dtype=np.float32),
-            'goal_pose': spaces.Box(low=-100.0, high=100.0, shape=(2,), dtype=np.float32),
-            'current_pose': spaces.Box(low=-100.0, high=100.0, shape=(2,), dtype=np.float32),
-            'global_path': spaces.Box(low=-50.0, high=50.0, shape=(400,2), dtype=np.float32),
+            'angular_velocity': spaces.Box(low=0, high=3.14, shape=(1,), dtype=np.float32),
+            'heading_error': spaces.Box(low=0, high=3.14, shape=(1,), dtype=np.float32),
+            'relative_goal': spaces.Box(low=-100.0, high=100.0, shape=(2,), dtype=np.float32),
+            'global_path': spaces.Box(low=-50.0, high=50.0, shape=(20,2), dtype=np.float32),
         })
 
     def _initialise(self):
+        self.relativeGoal = None
         self.angularVelocityCounter = 0
         self.pathArrayConverted = []
         self.collision = False
@@ -305,15 +310,21 @@ class CustomGymnasiumEnvNav2(gym.Env):
         if ( self.scan_data and self.speed_twist and self.currentPose and self.pathArray):
             if self.counter ==1:
                 self.subscribeNode.get_logger().info("Running New Episode")
+            
+            #find the pose of the target in the global frame
+            self._findRelativeGoal()
 
+            #this will take the path array that is given and convert the poses in the array into an array of x,y coordinates
             self._convertPathArray()
 
+            #process all the Lidar observations and update lidar array of historical observations
             self.closestObstacle = min(self.scan_data.ranges)  #find the closest obstacle
             self._roundLidar()
-            self.updateLidar()
+            self._updateLidar()
+
             self.lastDistanceToTarget = self.newDistanceToTarget
             self.newDistanceToTarget = self._getDistance()
-            # self.goalAngle = self._getGoalAngle()
+
             if len(self.pathArray) > self.lookAheadDist:
                 self.pathAngle = self._calculate_heading_angle(self.currentPose, self.pathArray[self.lookAheadDist].pose)
             else:
@@ -325,17 +336,17 @@ class CustomGymnasiumEnvNav2(gym.Env):
 
             #this is us updating the reward class variable with 
             self._calculateReward()
-  
 
             #this will check the terminal conditions and if its terminated update self.reward accordingly
             terminated = self._checkTerminalConditions()
+
             observation = {
                 'lidar': self.lidarTracking,
                 'linear_velocity': self.linearVelocity,
                 'angular_velocity': self.angularVelocity,
-                'goal_pose': [self.target_pose.position.x, self.target_pose.position.y],
-                'current_pose': [self.currentPose.position.x, self.currentPose.position.y] ,
-                'global_path': self.pathArrayConverted
+                'heading_error': self.pathAngle,
+                'relative_goal': self.relativeGoal,
+                'global_path': self.pathArrayConverted,
             }
         else:
             self.subscribeNode.get_logger().info("Scan or observation data missing")
@@ -359,30 +370,34 @@ class CustomGymnasiumEnvNav2(gym.Env):
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed, options=options)
-        #check if we have collided with an obstacle if so then run the backup and spin
-        if self.collision:
-            self._backup_and_spin()
+
 
         #reset the costmaps
         self.publishNode.clear_local_costmap()
         self.publishNode.clear_global_costmap()
+
+        #check if we have collided with an obstacle if so then run the backup and spin
+        if self.collision:
+            self._backup_and_spin()
+        
+        #stop the robot
+        self.publishNode.sendAction(0.0, 0.0)
+        
+        time.sleep(2)
         
         #reset variables
         self._initialise()
-        #stop the robot
-        self.publishNode.sendAction(0.0, 0.0)
-        time.sleep(2)
-        #set target
+     
         if self.target_pose == None:
             self.target_pose = Pose()
             self.target_pose.position.x = 4.0
-            self.target_pose.position.y = 1.0
+            self.target_pose.position.y = 2.5
             self.target_pose.position.z = 0.0
             self.target_pose.orientation.w = 1.0
 
         else:
             self._setNewTargetAndInitial()
-            # self.publishNode.send_initial_pose(self.intial_pose)
+            self.publishNode.send_initial_pose(self.currentPose)
 
         self.publishNode.send_goal_pose(self.target_pose)
 
@@ -403,19 +418,22 @@ class CustomGymnasiumEnvNav2(gym.Env):
 
         #get udpated observations from odometry
         if ( self.scan_data and self.speed_twist and self.currentPose and self.pathArray):
+            self._findRelativeGoal()
             self._roundLidar()
-            self.updateLidar()
+            self._updateLidar()
             self.newDistanceToTarget = self._getDistance()
             self.linearVelocity= round(self.speed_twist.linear.x, 2) 
             self.angularVelocity = round(self.speed_twist.angular.z,2)
+            self.pathAngle = self._calculate_heading_angle(self.currentPose, self.pathArray[self.lookAheadDist].pose)
             self._convertPathArray()
+            self.subscribeNode.get_logger().info(f"{self.linearVelocity} ,{self.angularVelocity} {self.pathAngle}, {self.relativeGoal}")
             observation = {
                 'lidar': self.lidarTracking,
                 'linear_velocity': self.linearVelocity,
                 'angular_velocity': self.angularVelocity,
-                'goal_pose': [self.target_pose.position.x, self.target_pose.position.y],
-                'current_pose': [self.currentPose.position.x, self.currentPose.position.y] ,
-                'global_path': self.pathArrayConverted
+                'heading_error': self.pathAngle,
+                'relative_goal': self.relativeGoal,
+                'global_path': self.pathArrayConverted,
             }
         else:
             observation = self.observation_space.sample()  # Return a random observation within space
@@ -432,23 +450,69 @@ class CustomGymnasiumEnvNav2(gym.Env):
     def _setNewTargetAndInitial(self):
         self.target_pose.position.x = float(np.random.randint(-4,14))
         self.target_pose.position.y = float(np.random.randint(-9, 9))
+        self.currentPose = Pose()
+        self.currentPose.position.x = float(np.random.randint(-4,14))
+        self.currentPose.position.y = float(np.random.randint(-9, 9))
       
     def _convertPathArray(self):
-        self.pathArrayConverted = np.zeros((400, 2), dtype=np.float32)  
-        path_length = min(len(self.pathArray), 400) 
+        self.pathArrayConverted = np.zeros((20, 2), dtype=np.float32)  
+        path_length = min(len(self.pathArray), 20) 
         for i in range(path_length):
             self.pathArrayConverted[i] = [self.pathArray[i].pose.position.x, self.pathArray[i].pose.position.y]
         
 
     def _calculateReward(self):
-        obstacleReward = 0
-        # self.reward = self.pathAngle * self.alpha + (self.beta/self.newDistanceToTarget) + self.roh * self.linearVelocity + self.mu * self.angularVelocity
-        self.reward = self.pathAngle * self.alpha + (self.beta * self.changeInDistanceToTarget) + self.roh * self.linearVelocity + self.mu * self.angularVelocity
-        if self.closestObstacle < 1.5:
-            obstacleReward = (self.gamma)* (1 / self.closestObstacle) # this means a max pentaly possible is around -0.75
-        self.reward += obstacleReward
-        self.subscribeNode.get_logger().info(f"obs: {self.closestObstacle}, heading: {self.pathAngle}, dist: {self.newDistanceToTarget}, vel: {self.linearVelocity}")
-        self.subscribeNode.get_logger().info(f"The reward is {self.reward}")
+        # Coefficients for each reward component
+        alpha = -0.5  # Penalty for deviation from the path (heading angle)
+        beta = 3.0    # Reward for reducing distance to the goal
+        gamma = -0.3  # Penalty for proximity to obstacles
+        roh = 0.5     # Reward for maintaining linear speed
+        mu = -0.1     # Penalty for high angular velocity
+        time_penalty = -0.005  # Small penalty per time step
+        goal_reached_bonus = 100  # Large bonus for reaching the goal
+        collision_penalty = -50  # High penalty for collisions
+
+        # Base reward
+        reward = 0
+
+        self.subscribeNode.get_logger().info("TERMINATED - COLLISION WITH OBSTACLE")
+
+
+        # Distance to the goal reward
+        if self.lastDistanceToTarget is not None:
+            distance_reward = (self.lastDistanceToTarget - self.newDistanceToTarget)
+            reward += beta * distance_reward
+
+        # Heading alignment reward (0 when aligned, pi when opposite)
+        heading_reward = self.pathAngle
+        reward += alpha * heading_reward
+
+        # Penalty for being too close to obstacles
+        if self.closestObstacle < 1.0:
+            obstacle_penalty = (1 / self.closestObstacle)  # Higher penalty the closer the obstacle
+            reward += gamma * obstacle_penalty
+
+        # Reward for maintaining a reasonable linear velocity
+        reward += roh * self.linearVelocity
+
+        # Penalty for excessive angular velocity
+        reward += mu * abs(self.angularVelocity)
+
+        # Add a small time penalty to encourage quicker task completion
+        # reward += self.counter * time_penalty
+
+        # Check for terminal conditions and apply appropriate rewards/penalties
+        if self.newDistanceToTarget < 0.5:  # Goal reached
+            reward += goal_reached_bonus
+            self.subscribeNode.get_logger().info("Goal reached!")
+        elif self.closestObstacle < 0.5:  # Collision with obstacle
+            reward += collision_penalty
+            self.collision = True
+            self.subscribeNode.get_logger().info("TERMINATED - COLLISION WITH OBSTACLE")
+
+        self.reward = reward
+        self.subscribeNode.get_logger().info(f"Reward calculated: {reward}")
+        return reward
 
     def _checkTerminalConditions(self): 
         if self.newDistanceToTarget < 0.5:
@@ -475,10 +539,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.scan_data.ranges = processed_ranges.tolist()
 
     def _getDistance(self):
-        delta_x = self.target_pose.position.x - self.currentPose.position.x
-        delta_y = self.target_pose.position.y - self.currentPose.position.y
-        distance = float((delta_x**2 + delta_y**2) ** 0.5)
-        return distance
+        return (self.relativeGoal[0]**2 + self.relativeGoal[1]**2)**0.5
 
     def _calculate_heading_angle(self,current_pose, goal_pose):
         # Extract x and y positions
@@ -515,7 +576,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
         return m.atan2(siny_cosp, cosy_cosp)
 
 
-    def updateLidar(self):
+    def _updateLidar(self):
         # self.subscribeNode.get_logger().info(f"Length of rounded lidar {len(lidarObservation)}")
         self.lidarTracking[2] = self.lidarTracking[1]
         self.lidarTracking[1] = self.lidarTracking[0]
@@ -529,9 +590,33 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.publishNode.send_backup_goal() 
 
         # Send spin action
-        # self.publishNode.send_spin_goal()  # Spin 180 degrees
+        self.publishNode.send_spin_goal()  # Spin 180 degrees
 
         self.subscribeNode.get_logger().info("Executed backup and spin recovery maneuver")
+    
+    def _findRelativeGoal(self):
+      
+        # Extract robot's current position and orientation (yaw) in the global frame
+        x_robot = self.currentPose.position.x
+        y_robot = self.currentPose.position.y
+        yaw_robot = self._quaternion_to_yaw(
+            self.currentPose.orientation.x,
+            self.currentPose.orientation.y,
+            self.currentPose.orientation.z,
+            self.currentPose.orientation.w
+        )
+
+        x_goal = self.target_pose.position.x
+        y_goal = self.target_pose.position.y
+        
+        dx = x_goal - x_robot
+        dy = y_goal - y_robot
+        
+        # Transform the displacement vector into the robot's local frame
+        x_relative = dx * m.cos(yaw_robot) + dy * m.sin(yaw_robot)
+        y_relative = -dx * m.sin(yaw_robot) + dy * m.cos(yaw_robot)
+        
+        self.relativeGoal =  np.array([x_relative, y_relative]).astype(float)
 
 
 
