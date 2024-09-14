@@ -511,7 +511,8 @@ class CustomGymnasiumEnvNav2(gym.Env):
             self.subscribeNode.get_logger().info("TERMINATED - COLLISION WITH OBSTACLE")
 
         self.reward = reward
-        self.subscribeNode.get_logger().info(f"Reward calculated: {reward}")
+        self.subscribeNode.get_logger().info(f"obs: {self.closestObstacle}, heading: {self.pathAngle}, dist: {self.newDistanceToTarget}, vel: {self.linearVelocity}")
+        self.subscribeNode.get_logger().info(f"The reward is {self.reward}")
         return reward
 
     def _checkTerminalConditions(self): 
