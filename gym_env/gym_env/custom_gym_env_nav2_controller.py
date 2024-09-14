@@ -140,19 +140,25 @@ class Publisher(Node):
     
     def send_backup_goal(self):
         goal_msg = BackUp.Goal()
-        goal_msg.target = Point(x=1.0, y=0.0, z=0.0)
+        goal_msg.target = Point(x=2.0, y=0.0, z=0.0)
         goal_msg.speed = float(0.1)
         goal_msg.time_allowance = Duration(sec=5, nanosec=0)  # Adjust as needed
+        self.get_logger().info("Sending backup goal")
         self.backup_client.wait_for_server()
-        self.backup_client.send_goal_async(goal_msg)
-        # self.backup_client.wait_for_result()
+        future = self.backup_client.send_goal_async(goal_msg)
+        rclpy.spin_until_future_complete(self, future)
+        if future.result().status == 4:
+            self.get_logger().info("Backup completed successfully")
+        else:
+            self.get_logger().error("Backup action failed")
 
-    def send_spin_goal(self):
-        goal_msg = Spin.Goal()
-        goal_msg.target_yaw = float(1.57)
-        self.spin_client.wait_for_server()
-        self.spin_client.send_goal_async(goal_msg)
-        # self.spin_client.wait_for_result()
+
+    # def send_spin_goal(self):
+        # goal_msg = Spin.Goal()
+        # goal_msg.target_yaw = float(1.57)
+        # self.spin_client.wait_for_server()
+        # self.spin_client.send_goal_async(goal_msg)
+        # # self.spin_client.wait_for_result()
     
     def clear_local_costmap(self):
         self.get_logger().info("Clearing local costmap...")
@@ -244,7 +250,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
             'angular_velocity': spaces.Box(low=-3.14, high=3.14, shape=(1,), dtype=np.float32),
             'goal_pose': spaces.Box(low=-100.0, high=100.0, shape=(2,), dtype=np.float32),
             'current_pose': spaces.Box(low=-100.0, high=100.0, shape=(2,), dtype=np.float32),
-            # 'global_path': spaces.Box(low=-50.0, high=50.0, shape=(400,2), dtype=np.float32),
+            'global_path': spaces.Box(low=-50.0, high=50.0, shape=(400,2), dtype=np.float32),
         })
 
     def _initialise(self):
@@ -282,15 +288,6 @@ class CustomGymnasiumEnvNav2(gym.Env):
 
         rclpy.spin_once(self.publishNode, timeout_sec=1.0)
     
-        # if self.lastAngVelocity == None:
-        #     self.lastAngVelocity = round(angular_vel, 3)
-        # else:   
-        #     if self.lastAngVelocity == round(angular_vel, 3):
-        #         self.angularVelocityCounter += 1
-        #         self.subscribeNode.get_logger().info(f"repetitive omega #:{self.angularVelocityCounter}")
-        #     else:
-        #         self.lastAngVelocity = round(angular_vel, 3)        
-
         # Wait for new scan and pose data
         rclpy.spin_once(self.subscribeNode, timeout_sec=1.0)
 
@@ -308,7 +305,8 @@ class CustomGymnasiumEnvNav2(gym.Env):
         if ( self.scan_data and self.speed_twist and self.currentPose and self.pathArray):
             if self.counter ==1:
                 self.subscribeNode.get_logger().info("Running New Episode")
-            # self._convertPathArray()
+
+            self._convertPathArray()
 
             self.closestObstacle = min(self.scan_data.ranges)  #find the closest obstacle
             self._roundLidar()
@@ -337,7 +335,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
                 'angular_velocity': self.angularVelocity,
                 'goal_pose': [self.target_pose.position.x, self.target_pose.position.y],
                 'current_pose': [self.currentPose.position.x, self.currentPose.position.y] ,
-                # 'global_path': self.pathArrayConverted
+                'global_path': self.pathArrayConverted
             }
         else:
             self.subscribeNode.get_logger().info("Scan or observation data missing")
@@ -377,8 +375,8 @@ class CustomGymnasiumEnvNav2(gym.Env):
         #set target
         if self.target_pose == None:
             self.target_pose = Pose()
-            self.target_pose.position.x = 10.0
-            self.target_pose.position.y = 0.0
+            self.target_pose.position.x = 4.0
+            self.target_pose.position.y = 1.0
             self.target_pose.position.z = 0.0
             self.target_pose.orientation.w = 1.0
 
@@ -410,14 +408,14 @@ class CustomGymnasiumEnvNav2(gym.Env):
             self.newDistanceToTarget = self._getDistance()
             self.linearVelocity= round(self.speed_twist.linear.x, 2) 
             self.angularVelocity = round(self.speed_twist.angular.z,2)
-            # self._convertPathArray()
+            self._convertPathArray()
             observation = {
                 'lidar': self.lidarTracking,
                 'linear_velocity': self.linearVelocity,
                 'angular_velocity': self.angularVelocity,
                 'goal_pose': [self.target_pose.position.x, self.target_pose.position.y],
                 'current_pose': [self.currentPose.position.x, self.currentPose.position.y] ,
-                # 'global_path': self.pathArrayConverted
+                'global_path': self.pathArrayConverted
             }
         else:
             observation = self.observation_space.sample()  # Return a random observation within space
@@ -531,7 +529,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.publishNode.send_backup_goal() 
 
         # Send spin action
-        self.publishNode.send_spin_goal()  # Spin 180 degrees
+        # self.publishNode.send_spin_goal()  # Spin 180 degrees
 
         self.subscribeNode.get_logger().info("Executed backup and spin recovery maneuver")
 
