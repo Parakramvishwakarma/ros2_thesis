@@ -318,6 +318,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
             self.closestObstacle = min(self.scan_data.ranges)  #find the closest obstacle
             self.obstacleAngle = self.scan_data.ranges.index(self.closestObstacle) * 0.5625
 
+
             self._roundLidar()
             self._updateLidar()
 
@@ -387,7 +388,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
             self.scan_data = self.subscribeNode.scan_data
             #get udpated observations from odometry
             if (self.scan_data):
-                if min(self.scan_data.ranges) > 1:
+                if min(self.scan_data.ranges) > 0.75:
                     self.collision = False
                     self.subscribeNode.get_logger().info("Obstacle Not in Range anymore")
                 else:
@@ -509,7 +510,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
             reward += collision_penalty
             self.collision = True
             self.subscribeNode.get_logger().info("TERMINATED - COLLISION WITH OBSTACLE")
-        elif self.closestObstacle < 0.65 and self.obstacleAngle < 90 and self.obstacleAngle > 270 :  # Collision with obstacle
+        elif self.closestObstacle < 0.65 and (self.obstacleAngle < 90 or self.obstacleAngle > 270) :  # Collision with obstacle
             reward += collision_penalty
             self.collision = True
             self.subscribeNode.get_logger().info("TERMINATED - COLLISION WITH OBSTACLE")
