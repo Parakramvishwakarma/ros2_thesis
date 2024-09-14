@@ -218,10 +218,10 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.target_pose = None
 
         #set reward parameters
-        self.alpha = -0.2 #this one is for the path angle
-        self.beta = 2 # this one is for the distance from the target
+        self.alpha = -0.25 #this one is for the path angle
+        self.beta = 1 # this one is for the distance from the target
         self.gamma  = -0.45 #this is for closest obstacle
-        self.roh = 0.25 #this is for linear.x speed
+        self.roh = 0.3 #this is for linear.x speed
         self.mu  = -0.2 #this is penalty for spinnging
     
         #scanner parameters
@@ -444,8 +444,8 @@ class CustomGymnasiumEnvNav2(gym.Env):
 
     def _calculateReward(self):
         obstacleReward = 0
-        self.reward = self.pathAngle * self.alpha + (self.beta/self.newDistanceToTarget) + self.roh * self.linearVelocity + self.mu * self.angularVelocity
-        # self.reward = self.pathAngle * self.alpha + (self.beta * self.changeInDistanceToTarget) + self.roh * self.linearVelocity + self.mu * self.angularVelocity
+        # self.reward = self.pathAngle * self.alpha + (self.beta/self.newDistanceToTarget) + self.roh * self.linearVelocity + self.mu * self.angularVelocity
+        self.reward = self.pathAngle * self.alpha + (self.beta * self.changeInDistanceToTarget) + self.roh * self.linearVelocity + self.mu * self.angularVelocity
         if self.closestObstacle < 1.5:
             obstacleReward = (self.gamma)* (1 / self.closestObstacle) # this means a max pentaly possible is around -0.75
         self.reward += obstacleReward
