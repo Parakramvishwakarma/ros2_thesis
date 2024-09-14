@@ -258,7 +258,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
             'angular_velocity': spaces.Box(low=0, high=3.14, shape=(1,), dtype=np.float32),
             'heading_error': spaces.Box(low=0, high=3.14, shape=(1,), dtype=np.float32),
             'relative_goal': spaces.Box(low=-100.0, high=100.0, shape=(2,), dtype=np.float32),
-            'global_path': spaces.Box(low=-50.0, high=50.0, shape=(20,2), dtype=np.float32),
+            'global_path': spaces.Box(low=-50.0, high=50.0, shape=(400,2), dtype=np.float32),
         })
 
     def _initialise(self):
@@ -459,8 +459,8 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.target_pose.position.y = float(np.random.randint(-9, 9))
 
     def _convertPathArray(self):
-        self.pathArrayConverted = np.zeros((20, 2), dtype=np.float32)  
-        path_length = min(len(self.pathArray), 20) 
+        self.pathArrayConverted = np.zeros((400, 2), dtype=np.float32)  
+        path_length = min(len(self.pathArray), 400) 
         for i in range(path_length):
             self.pathArrayConverted[i] = [self.pathArray[i].pose.position.x, self.pathArray[i].pose.position.y]
         
