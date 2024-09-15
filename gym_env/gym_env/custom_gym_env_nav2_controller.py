@@ -380,7 +380,6 @@ class CustomGymnasiumEnvNav2(gym.Env):
         #check if we have collided with an obstacle if so then run the backup and spin
         while self.collision:
             # self._backup_and_spin()
-            # self._backup_and_spin()
             if self.obstacleAngle >=135 and self.obstacleAngle <= 225:
                 self.publishNode.sendAction(-5.0, 0.0)
             elif self.obstacleAngle > 225 and self.obstacleAngle <= 315:
@@ -390,22 +389,21 @@ class CustomGymnasiumEnvNav2(gym.Env):
             else:
                 self.publishNode.sendAction(5.0, 1.0)
             time.sleep(2)
-            #reset variables
             rclpy.spin_once(self.subscribeNode, timeout_sec=1.0)
             self.scan_data = self.subscribeNode.scan_data
-            #get udpated observations from odometry
             if (self.scan_data):
-                if min(self.scan_data.ranges) > 0.75:
+                self._roundLidar()
+                self.closestObstacle = min(self.scan_data.ranges)
+                if self.closestObstacle > 0.75:
                     self.collision = False
                     self.subscribeNode.get_logger().info("Obstacle Not in Range anymore")
                 else:
+                    self.obstacleAngle = self.scan_data.ranges.index(self.closestObstacle) * 0.5625
                     self.subscribeNode.get_logger().info(f"Still in collision zone!!!!!! New closest: {min(self.scan_data.ranges)}")
                 
         #reset variables
         self._initialise()
         self.publishNode.sendAction(0.0, 0.0)
-
-     
         if self.target_pose == None:
             self.target_pose = Pose()
             self.target_pose.position.x = 4.0
@@ -434,9 +432,11 @@ class CustomGymnasiumEnvNav2(gym.Env):
             self._updateLidar()
             self.newDistanceToTarget = self._getDistance()
             self.linearVelocity= round(self.speed_twist.linear.x, 2) 
-            self.angularVelocity = round(self.speed_twist.angular.z,2) 
-            self._find_closest_path_point_and_distance() #this will update the class variables for closets point index and distance
-            self.pathAngle = self._findPathAngle()
+            self.angularVelocity = round(self.speed_twist.angular.z,2)
+            if len(self.pathArray) > self.lookAheadDist:
+                self.pathAngle = self._calculate_heading_angle(self.currentPose, self.pathArray[self.lookAheadDist].pose)
+            else:
+                self.pathAngle = self._calculate_heading_angle(self.currentPose, self.pathArray[-1].pose)
             self._convertPathArray()
             self.subscribeNode.get_logger().info(f"{self.linearVelocity} ,{self.angularVelocity} {self.pathAngle}, {self.relativeGoal}")
             observation = {
