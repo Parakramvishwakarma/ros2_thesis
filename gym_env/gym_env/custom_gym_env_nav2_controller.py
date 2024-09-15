@@ -378,10 +378,14 @@ class CustomGymnasiumEnvNav2(gym.Env):
         #check if we have collided with an obstacle if so then run the backup and spin
         while self.collision:
             # self._backup_and_spin()
-            if self.obstacleAngle >=90 and self.obstacleAngle <= 270:
+            if self.obstacleAngle >=135 and self.obstacleAngle <= 225:
                 self.publishNode.sendAction(-5.0, 0.0)
-            else:
+            elif self.obstacleAngle > 225 and self.obstacleAngle <= 315:
+                self.publishNode.sendAction(-5.0, -1.0)
+            elif self.obstacleAngle < 45 or self.obstacleAngle > 315:
                 self.publishNode.sendAction(5.0, 0.0)
+            else:
+                self.publishNode.sendAction(5.0, 1.0)
             time.sleep(2)
             #reset variables
             rclpy.spin_once(self.subscribeNode, timeout_sec=1.0)
