@@ -38,27 +38,6 @@ class Subscriber(Node):
             '/plan',
             self.path_callback,
             10)
-        self.subcription_costMap = self.create_subscription(
-            OccupancyGrid,
-            '/global_costmap/costmap',
-            self.map_callback,
-            10)
-        self.subcription_costMap_update = self.create_subscription(
-            OccupancyGridUpdate,
-            '/global_costmap/costmap_updates',
-            self.map_update_callback,
-            10)
-    
-        self.subcription_localCostMap = self.create_subscription(
-            OccupancyGrid,
-            '/local_costmap/costmap',
-            self.map_localcallback,
-            10)
-        self.subcription_localCostMap_update = self.create_subscription(
-            OccupancyGridUpdate,
-            '/local_costmap/costmap_updates',
-            self.map_localupdate_callback,
-            10)
         
         qos_profile = QoSProfile(
             reliability=QoSReliabilityPolicy.RELIABLE,
