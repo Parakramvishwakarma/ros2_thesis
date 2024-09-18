@@ -309,7 +309,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
             self.lastDistanceToTarget = self.newDistanceToTarget
             self.newDistanceToTarget = self._getDistance()
 
-            lookAheadDist = min(len(self.pathAngle) - 1, self.lookAheadDist)
+            lookAheadDist = min(len(self.pathArray) - 1, self.lookAheadDist)
             self.pathAngle = self._calculate_heading_angle(self.currentPose, self.pathArray[lookAheadDist].pose)
 
             if self.lastDistanceToTarget:
@@ -461,8 +461,8 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.target_pose.position.y = float(np.random.randint(-9, 9))
 
     def _convertPathArray(self):
-        self.pathArrayConverted = np.zeros((20, 2), dtype=np.float32)  
-        path_length = min(len(self.pathArray), 20) 
+        self.pathArrayConverted = np.zeros((100, 2), dtype=np.float32)  
+        path_length = min(len(self.pathArray), 100) 
         for i in range(path_length):
             self.pathArrayConverted[i] = [self.pathArray[i].pose.position.x, self.pathArray[i].pose.position.y]
         
@@ -473,7 +473,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
         beta = 3.0    # Reward for reducing distance to the goal
         gamma = -0.3  # Penalty for proximity to obstacles
         roh = 0.5     # Reward for maintaining linear speed
-        mu = -0.3     # Penalty for high angular velocity
+        mu = -0.5     # Penalty for high angular velocity
         time_penalty = -0.005  # Small penalty per time step
         goal_reached_bonus = 100  # Large bonus for reaching the goal
         collision_penalty = -50  # High penalty for collisions
@@ -584,18 +584,6 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.lidarTracking[1] = self.lidarTracking[0]
         self.lidarTracking[0] = self.scan_data.ranges
 
-    def _backup_and_spin(self):
-        """
-        Backs up and spins the robot 180 degrees if a collision is detected.
-        """
-        # Send backup action
-        self.publishNode.send_backup_goal() 
-
-        # Send spin action
-        self.publishNode.send_spin_goal()  # Spin 180 degrees
-
-        self.subscribeNode.get_logger().info("Executed backup and spin recovery maneuver")
-    
     def _findRelativeGoal(self):
       
         # Extract robot's current position and orientation (yaw) in the global frame
