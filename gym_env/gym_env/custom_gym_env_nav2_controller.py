@@ -338,6 +338,17 @@ class CustomGymnasiumEnvNav2(gym.Env):
                 'target_pose': [self.target_pose.position.x, self.target_pose.position.y] ,      
                 'global_path': self.pathArrayConverted,
             }
+
+                      # Store values for plotting
+            self.data['timesteps'].append(self.counter)
+            self.data['heading_error'].append(self.pathAngle)
+            self.data['change_distance'].append(self.changeInDistanceToTarget)
+            self.data['linear_velocity'].append(self.linearVelocity)
+            self.data['angular_speed'].append(abs(self.angularVelocity))
+            self.data['path_deviation'].append(self.closestPathDistance)
+            self.data['closest_obstacle'].append(self.closestObstacle)
+            self.data['reward'].append(self.reward)
+
         else:
             self.subscribeNode.get_logger().info("Scan or observation data missing")
             observation = self.observation_space.sample()
@@ -352,15 +363,6 @@ class CustomGymnasiumEnvNav2(gym.Env):
         else:
             truncated = False
 
-          # Store values for plotting
-        self.data['timesteps'].append(self.counter)
-        self.data['heading_error'].append(self.pathAngle)
-        self.data['change_distance'].append(self.changeInDistanceToTarget)
-        self.data['linear_velocity'].append(self.linearVelocity)
-        self.data['angular_speed'].append(abs(self.angularVelocity))
-        self.data['path_deviation'].append(self.closestPathDistance)
-        self.data['closest_obstacle'].append(self.closestObstacle)
-        self.data['reward'].append(self.reward)
 
         # Check if it's time to plot
         if len(self.data['reward']) % self.plot_interval == 0:
