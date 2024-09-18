@@ -161,14 +161,16 @@ class CustomGymnasiumEnvNav2(gym.Env):
 
         self.data = {
             'timesteps': [],
-            'path_angle': [],
+            'heading_error': [],
             'change_distance': [],
-            'distance_to_target': [],
+            'linear_velocity' : [],
+            'angular_speed' : [],
+            'path_deviation': [],
+            'closest_obstacle': [],
             'reward': [],
-            'speed' : [],
-            'angular_speed' : []
         }
-        self.plot_interval = 1000  # Interval for plotting
+        
+        self.plot_interval = 3000  # Interval for plotting
 
         #these are all the intermediary variables used to create the state and the reward for the agent
         self.angularVelocityCounter = 0
