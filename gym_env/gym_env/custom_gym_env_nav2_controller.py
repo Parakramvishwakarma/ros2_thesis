@@ -170,11 +170,10 @@ class CustomGymnasiumEnvNav2(gym.Env):
             'change_distance': [],
             'linear_velocity' : [],
             'angular_speed' : [],
-            'path_deviation': [],
             'closest_obstacle': [],
             'reward': [],
         }
-        self.plot_interval = 2000  # Interval for plotting
+        self.plot_interval = 10  # Interval for plotting
 
         #these are all the intermediary variables used to create the state and the reward for the agent
         self.angularVelocityCounter = 0
@@ -243,7 +242,6 @@ class CustomGymnasiumEnvNav2(gym.Env):
             'change_distance': [],
             'linear_velocity' : [],
             'angular_speed' : [],
-            'path_deviation': [],
             'closest_obstacle': [],
             'reward': [],
         }
@@ -273,8 +271,8 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.mapUpdateData = None
     
     def step(self, action):
-        #the function includes a step counter to keep track of terminal //..condition
         self.counter += 1
+        #the function includes a step counter to keep track of terminal //..condition
         linear_vel = action[0] * 5.0  
         angular_vel = action[1] * 3.14 
         self.publishNode.sendAction(linear_vel, angular_vel) #send action from the model
@@ -351,19 +349,17 @@ class CustomGymnasiumEnvNav2(gym.Env):
         if terminated == False and self.counter > self.episode_length:
             self.subscribeNode.get_logger().info("Episode Finished")
             truncated = True
-            self.reward = -1
         else:
-            truncated = False
-        # Check if it's time to plot
-        if len(self.data['reward']) % self.plot_interval == 0:
-            df = pd.DataFrame.from_dict(self.data)
-            df.to_csv("../data/rewards_data.csv")
+            truncated = False        
         return observation, self.reward, terminated, truncated, {}
     
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed, options=options)
-
+        if len(self.data['reward']):
+            print(self.data)
+            df = pd.DataFrame.from_dict(self.data)
+            df.to_csv("../data/rewards_data.csv")
         #reset the costmaps
         self.publishNode.clear_local_costmap()
         self.publishNode.clear_global_costmap()
