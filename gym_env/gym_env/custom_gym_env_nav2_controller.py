@@ -524,13 +524,11 @@ class CustomGymnasiumEnvNav2(gym.Env):
         return reward
 
     def _checkTerminalConditions(self): 
-        if self.newDistanceToTarget < 0.5:
-            self.reward = 1
+        if self.newDistanceToTarget < 0.5:  # Goal reached
             return True
-        elif self.closestObstacle < 0.5:
-            self.collision = True
-            self.subscribeNode.get_logger().info("TERMINATED - COLLISION WITH OBSTACLE")
-            # self.reward = -1
+        elif self.closestObstacle < 0.5 and self.obstacleAngle >= 90 and self.obstacleAngle <= 270 :  # Collision with obstacle
+            return True
+        elif self.closestObstacle < 0.65 and (self.obstacleAngle < 90 or self.obstacleAngle > 270) :  # Collision with obstacle
             return True
         else:
             return False
