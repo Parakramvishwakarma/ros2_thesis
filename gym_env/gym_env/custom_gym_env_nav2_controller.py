@@ -48,6 +48,17 @@ class Subscriber(Node):
             '/global_costmap/costmap_updates',
             self.map_update_callback,
             10)
+    
+        self.subcription_localCostMap = self.create_subscription(
+            OccupancyGrid,
+            '/local_costmap/costmap',
+            self.map_localcallback,
+            10)
+        self.subcription_localCostMap_update = self.create_subscription(
+            OccupancyGridUpdate,
+            '/local_costmap/costmap_updates',
+            self.map_localupdate_callback,
+            10)
         
         qos_profile = QoSProfile(
             reliability=QoSReliabilityPolicy.RELIABLE,
@@ -67,6 +78,8 @@ class Subscriber(Node):
         self.path_data = None
         self.og_cost_map_grid = None
         self.map_update = None
+        self.local_cost_map_grid = None
+        self.map_local_update = None
         self.pose_data = None
 
     def scan_callback(self, msg):
@@ -81,15 +94,18 @@ class Subscriber(Node):
         self.path_data = msg.poses
         
     def map_callback(self, msg):
-
         #This is the array of occupancy grid we are not currently sure waht the obejctive of the origin is        
-        self.og_cost_map_grid = msg.data
+        self.og_cost_map_grid = msg
 
-    def map_update_callback(self, msg):
+    # def map_update_callback(self, msg):
+    #     self.map_update = msg
+    
+    # def map_localcallback(self, msg):
+    #     self.loc_cost_map_grid_cost_map_grid = msg
 
-        self.map_update = msg
-        ##this needs code to how we update the orignal cost map
-        ##msg type is map_msgs/msg/OccupancyGridUpdate
+    # def map_localupdate_callback(self, msg):
+    #     self.map_local_update = msg
+    
     
     def pose_callback(self, msg):
         self.pose_data = msg.pose.pose
@@ -137,31 +153,6 @@ class Publisher(Node):
         goalPose_pose.header.frame_id = "map"
         goalPose_pose.pose = pose
         self.publish_goal_pose.publish(goalPose_pose)
-    
-    def send_backup_goal(self):
-        goal_msg = BackUp.Goal()
-        goal_msg.target = Point(x=2.0, y=0.0, z=0.0)
-        goal_msg.speed = float(0.1)
-        goal_msg.time_allowance = Duration(sec=5, nanosec=0)  # Adjust as needed
-        # self.get_logger().info("Sending backup goal")
-        self.backup_client.wait_for_server()
-        future = self.backup_client.send_goal_async(goal_msg)
-        rclpy.spin_until_future_complete(self, future)
-        # if future.result().status == 4:
-        #     self.get_logger().info("Backup completed successfully")
-        # else:
-        #     self.get_logger().error("Backup action failed")
-
-
-    def send_spin_goal(self):
-        goal_msg = Spin.Goal()
-        goal_msg.target_yaw = float(1.57)
-        # self.get_logger().info("Sending Spin goal")
-        self.spin_client.wait_for_server()
-        future = self.spin_client.send_goal_async(goal_msg)
-        rclpy.spin_until_future_complete(self, future)
-
-        # self.spin_client.wait_for_result()
     
     def clear_local_costmap(self):
         self.get_logger().info("Clearing local costmap...")
@@ -249,6 +240,8 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.pathArray = None
         self.mapArray = None
         self.mapUpdateData = None
+        self.localMapArray = None
+        self.localMapUpdateData = None
 
         # Define action and observation space
         self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(2,), dtype=np.float32)
@@ -258,7 +251,9 @@ class CustomGymnasiumEnvNav2(gym.Env):
             'angular_velocity': spaces.Box(low=0, high=3.14, shape=(1,), dtype=np.float32),
             'heading_error': spaces.Box(low=0, high=3.14, shape=(1,), dtype=np.float32),
             'relative_goal': spaces.Box(low=-100.0, high=100.0, shape=(2,), dtype=np.float32),
-            'global_path': spaces.Box(low=-50.0, high=50.0, shape=(400,2), dtype=np.float32),
+            'current_pose': spaces.Box(low=-100.0, high=100.0, shape=(2,), dtype=np.float32), 
+            'target_pose' : spaces.Box(low=-100.0, high=100.0, shape=(2,), dtype=np.float32),     
+            'global_path': spaces.Box(low=-50.0, high=50.0, shape=(100,2), dtype=np.float32),
         })
 
     def _initialise(self):
@@ -322,7 +317,6 @@ class CustomGymnasiumEnvNav2(gym.Env):
             self.closestObstacle = min(self.scan_data.ranges)  #find the closest obstacle
             self.obstacleAngle = self.scan_data.ranges.index(self.closestObstacle) * 0.5625
 
-
             self._roundLidar()
             self._updateLidar()
 
@@ -348,6 +342,8 @@ class CustomGymnasiumEnvNav2(gym.Env):
                 'angular_velocity': self.angularVelocity,
                 'heading_error': self.pathAngle,
                 'relative_goal': self.relativeGoal,
+                'current_pose': [self.currentPose.position.x, self.currentPose.position.y],  
+                'target_pose': [self.target_pose.position.x, self.target_pose.position.y] ,      
                 'global_path': self.pathArrayConverted,
             }
         else:
@@ -445,6 +441,8 @@ class CustomGymnasiumEnvNav2(gym.Env):
                 'angular_velocity': self.angularVelocity,
                 'heading_error': self.pathAngle,
                 'relative_goal': self.relativeGoal,
+                'current_pose': [self.currentPose.position.x, self.currentPose.position.y],  
+                'target_pose': [self.target_pose.position.x, self.target_pose.position.y] ,      
                 'global_path': self.pathArrayConverted,
             }
         else:
@@ -464,8 +462,8 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.target_pose.position.y = float(np.random.randint(-9, 9))
 
     def _convertPathArray(self):
-        self.pathArrayConverted = np.zeros((400, 2), dtype=np.float32)  
-        path_length = min(len(self.pathArray), 400) 
+        self.pathArrayConverted = np.zeros((100, 2), dtype=np.float32)  
+        path_length = min(len(self.pathArray), 100) 
         for i in range(path_length):
             self.pathArrayConverted[i] = [self.pathArray[i].pose.position.x, self.pathArray[i].pose.position.y]
         
@@ -660,7 +658,34 @@ class CustomGymnasiumEnvNav2(gym.Env):
         lookaheadPointIndex = min(self.closestPathPointIndex + 20, len(self.pathArray) - 1)
         lookAhead = self.pathArray[lookaheadPointIndex].pose
         return self._calculate_heading_angle(self.currentPose, lookAhead)
-        
+
+    def _process_costmap(self):
+        """
+        Processes the costmap data to identify unsafe regions around the robot.
+        """
+        if self.og_cost_map_grid is None:
+            return float('inf'), float('inf')  # Return high values if costmap is unavailable.
+
+        # Unpack the costmap data and metadata
+        costmap = np.array(self.og_cost_map_grid.data).reshape((self.og_cost_map_grid.info.height, 
+                                                                self.og_cost_map_grid.info.width))
+        resolution = self.og_cost_map_grid.info.resolution
+        origin = self.og_cost_map_grid.info.origin.position
+
+        # Robot's current position in the costmap frame
+        robot_x = int((self.currentPose.position.x - origin.x) / resolution)
+        robot_y = int((self.currentPose.position.y - origin.y) / resolution)
+
+        # Extract a small region around the robot
+        robot_area = costmap[max(0, robot_y - 2):min(costmap.shape[0], robot_y + 3), 
+                            max(0, robot_x - 2):min(costmap.shape[1], robot_x + 3)]
+
+        # Calculate the average and maximum cost in this area
+        average_cost = np.mean(robot_area[robot_area >= 0]) if np.any(robot_area >= 0) else 0  # Exclude unknown cells (-1)
+        max_cost = np.max(robot_area)
+
+        return average_cost, max_cost
+            
 
 
 
