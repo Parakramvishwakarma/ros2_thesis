@@ -372,8 +372,10 @@ class CustomGymnasiumEnvNav2(gym.Env):
     
 
     def reset(self, seed=None, options=None):
-        super().reset(seed=seed, options=options)
-
+        super().reset(seed=seed, options=options
+        if len(self.data['reward']):
+            df = pd.DataFrame.from_dict(self.data)
+            df.to_csv("../data.csv")
         #reset the costmaps
         self.publishNode.clear_local_costmap()
         self.publishNode.clear_global_costmap()
