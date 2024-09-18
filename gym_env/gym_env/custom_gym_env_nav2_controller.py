@@ -483,7 +483,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
         beta = 2.5    # Reward for reducing distance to the goal
         gamma = -0.5  # Penalty for proximity to obstacles
         roh = 0.4     # Reward for maintaining linear speed
-        mu = -0.1     # Penalty for high angular velocity
+        mu = -0.3     # Penalty for high angular velocity
         delta = -0.8  # Path deviation penalty
         time_penalty = -0.005  # Small penalty per time step
         goal_reached_bonus = 150  # Large bonus for reaching the goal
