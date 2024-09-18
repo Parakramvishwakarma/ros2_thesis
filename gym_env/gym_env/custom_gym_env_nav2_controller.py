@@ -138,31 +138,6 @@ class Publisher(Node):
         goalPose_pose.pose = pose
         self.publish_goal_pose.publish(goalPose_pose)
     
-    def send_backup_goal(self):
-        goal_msg = BackUp.Goal()
-        goal_msg.target = Point(x=2.0, y=0.0, z=0.0)
-        goal_msg.speed = float(0.1)
-        goal_msg.time_allowance = Duration(sec=5, nanosec=0)  # Adjust as needed
-        # self.get_logger().info("Sending backup goal")
-        self.backup_client.wait_for_server()
-        future = self.backup_client.send_goal_async(goal_msg)
-        rclpy.spin_until_future_complete(self, future)
-        # if future.result().status == 4:
-        #     self.get_logger().info("Backup completed successfully")
-        # else:
-        #     self.get_logger().error("Backup action failed")
-
-
-    def send_spin_goal(self):
-        goal_msg = Spin.Goal()
-        goal_msg.target_yaw = float(1.57)
-        # self.get_logger().info("Sending Spin goal")
-        self.spin_client.wait_for_server()
-        future = self.spin_client.send_goal_async(goal_msg)
-        rclpy.spin_until_future_complete(self, future)
-
-        # self.spin_client.wait_for_result()
-    
     def clear_local_costmap(self):
         self.get_logger().info("Clearing local costmap...")
         future = self.local_costmap_clear_client.call_async(ClearEntireCostmap.Request())
@@ -191,14 +166,15 @@ class CustomGymnasiumEnvNav2(gym.Env):
 
         self.data = {
             'timesteps': [],
-            'path_angle': [],
+            'heading_error': [],
             'change_distance': [],
-            'distance_to_target': [],
+            'linear_velocity' : [],
+            'angular_speed' : [],
+            'path_deviation': [],
+            'closest_obstacle': [],
             'reward': [],
-            'speed' : [],
-            'angular_speed' : []
         }
-        self.plot_interval = 1000  # Interval for plotting
+        self.plot_interval = 2000  # Interval for plotting
 
         #these are all the intermediary variables used to create the state and the reward for the agent
         self.angularVelocityCounter = 0
@@ -255,10 +231,22 @@ class CustomGymnasiumEnvNav2(gym.Env):
             'angular_velocity': spaces.Box(low=0, high=3.14, shape=(1,), dtype=np.float32),
             'heading_error': spaces.Box(low=0, high=3.14, shape=(1,), dtype=np.float32),
             'relative_goal': spaces.Box(low=-100.0, high=100.0, shape=(2,), dtype=np.float32),
-            'global_path': spaces.Box(low=-50.0, high=50.0, shape=(20,2), dtype=np.float32),
+            'current_pose': spaces.Box(low=-100.0, high=100.0, shape=(2,), dtype=np.float32), 
+            'target_pose' : spaces.Box(low=-100.0, high=100.0, shape=(2,), dtype=np.float32),     
+            'global_path': spaces.Box(low=-50.0, high=50.0, shape=(100,2), dtype=np.float32),
         })
 
     def _initialise(self):
+        self.data = {
+            'timesteps': [],
+            'heading_error': [],
+            'change_distance': [],
+            'linear_velocity' : [],
+            'angular_speed' : [],
+            'path_deviation': [],
+            'closest_obstacle': [],
+            'reward': [],
+        }
         self.relativeGoal = None
         self.angularVelocityCounter = 0
         self.pathArrayConverted = []
@@ -286,8 +274,6 @@ class CustomGymnasiumEnvNav2(gym.Env):
     
     def step(self, action):
         #the function includes a step counter to keep track of terminal //..condition
-        start_time = time.perf_counter()  # Start the timer
-
         self.counter += 1
         linear_vel = action[0] * 5.0  
         angular_vel = action[1] * 3.14 
@@ -317,18 +303,15 @@ class CustomGymnasiumEnvNav2(gym.Env):
             #process all the Lidar observations and update lidar array of historical observations
             self.closestObstacle = min(self.scan_data.ranges)  #find the closest obstacle
             self.obstacleAngle = self.scan_data.ranges.index(self.closestObstacle) * 0.5625
-
-
             self._roundLidar()
             self._updateLidar()
 
             self.lastDistanceToTarget = self.newDistanceToTarget
             self.newDistanceToTarget = self._getDistance()
 
-            if len(self.pathArray) > self.lookAheadDist:
-                self.pathAngle = self._calculate_heading_angle(self.currentPose, self.pathArray[self.lookAheadDist].pose)
-            else:
-                self.pathAngle = self._calculate_heading_angle(self.currentPose, self.pathArray[-1].pose)
+            lookAheadDist = min(len(self.pathAngle) - 1, self.lookAheadDist)
+            self.pathAngle = self._calculate_heading_angle(self.currentPose, self.pathArray[lookAheadDist].pose)
+
             if self.lastDistanceToTarget:
                 self.changeInDistanceToTarget = self.newDistanceToTarget - self.lastDistanceToTarget
             self.linearVelocity= round(self.speed_twist.linear.x, 2) 
@@ -346,8 +329,18 @@ class CustomGymnasiumEnvNav2(gym.Env):
                 'angular_velocity': self.angularVelocity,
                 'heading_error': self.pathAngle,
                 'relative_goal': self.relativeGoal,
+                'current_pose': [self.currentPose.position.x, self.currentPose.position.y],  
+                'target_pose': [self.target_pose.position.x, self.target_pose.position.y] ,      
                 'global_path': self.pathArrayConverted,
             }
+            # Store values for plotting
+            self.data['timesteps'].append(self.counter)
+            self.data['heading_error'].append(self.pathAngle)
+            self.data['change_distance'].append(self.changeInDistanceToTarget)
+            self.data['linear_velocity'].append(self.linearVelocity)
+            self.data['angular_speed'].append(abs(self.angularVelocity))
+            self.data['closest_obstacle'].append(self.closestObstacle)
+            self.data['reward'].append(self.reward)
         else:
             self.subscribeNode.get_logger().info("Scan or observation data missing")
             observation = self.observation_space.sample()
@@ -361,10 +354,10 @@ class CustomGymnasiumEnvNav2(gym.Env):
             self.reward = -1
         else:
             truncated = False
-
-        end_time = time.perf_counter()  # End the timer
-        execution_time = end_time - start_time  # Calculate the elapsed time
-        # self.subscribeNode.get_logger().info(f"Step function execution time: {execution_time:.6f} seconds")
+        # Check if it's time to plot
+        if len(self.data['reward']) % self.plot_interval == 0:
+            df = pd.DataFrame.from_dict(self.data)
+            df.to_csv("../data/rewards_data.csv")
         return observation, self.reward, terminated, truncated, {}
     
 
@@ -379,12 +372,16 @@ class CustomGymnasiumEnvNav2(gym.Env):
         while self.collision:
             # self._backup_and_spin()
             if self.obstacleAngle >=135 and self.obstacleAngle <= 225:
+                self.subscribeNode.get_logger().info(f"Running Backup Manouvre obstacle at front")
                 self.publishNode.sendAction(-5.0, 0.0)
             elif self.obstacleAngle > 225 and self.obstacleAngle <= 315:
+                self.subscribeNode.get_logger().info(f"Obstacle on the left")
                 self.publishNode.sendAction(-5.0, -1.0)
             elif self.obstacleAngle < 45 or self.obstacleAngle > 315:
+                self.subscribeNode.get_logger().info(f"Obstacle at the back running front Manouvre")
                 self.publishNode.sendAction(5.0, 0.0)
-            else:
+            elif self.obstacleAngle >=45 or self.obstacleAngle < 135 :
+                self.subscribeNode.get_logger().info(f"Obstacle on the right")
                 self.publishNode.sendAction(5.0, 1.0)
             time.sleep(2)
             rclpy.spin_once(self.subscribeNode, timeout_sec=1.0)
@@ -443,6 +440,8 @@ class CustomGymnasiumEnvNav2(gym.Env):
                 'angular_velocity': self.angularVelocity,
                 'heading_error': self.pathAngle,
                 'relative_goal': self.relativeGoal,
+                'current_pose': [self.currentPose.position.x, self.currentPose.position.y],  
+                'target_pose': [self.target_pose.position.x, self.target_pose.position.y] ,      
                 'global_path': self.pathArrayConverted,
             }
         else:
@@ -474,7 +473,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
         beta = 3.0    # Reward for reducing distance to the goal
         gamma = -0.3  # Penalty for proximity to obstacles
         roh = 0.5     # Reward for maintaining linear speed
-        mu = -0.1     # Penalty for high angular velocity
+        mu = -0.3     # Penalty for high angular velocity
         time_penalty = -0.005  # Small penalty per time step
         goal_reached_bonus = 100  # Large bonus for reaching the goal
         collision_penalty = -50  # High penalty for collisions
