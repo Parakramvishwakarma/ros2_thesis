@@ -173,7 +173,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
             'closest_obstacle': [],
             'reward': [],
         }
-        self.plot_interval = 10  # Interval for plotting
+        self.temp_target_update_interval = 20  # Interval for plotting
 
         #these are all the intermediary variables used to create the state and the reward for the agent
         self.angularVelocityCounter = 0
@@ -191,6 +191,10 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.collision = False
         self.pathArrayConverted = []
         self.obstacleAngle = None
+        self.distanceToGoal = None
+
+        self.initialDistanceTemp = None
+
 
         #this is the param for how many poses ahead the path we look to find the path angle
         self.lookAheadDist = 40 
@@ -201,6 +205,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
 
         #define the target pose for training
         self.target_pose = None
+        self.temp_target_pose = None
         self.relativeGoal = None
 
         #set reward parameters
@@ -232,7 +237,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
             'relative_goal': spaces.Box(low=-100.0, high=100.0, shape=(2,), dtype=np.float32),
             'current_pose': spaces.Box(low=-100.0, high=100.0, shape=(2,), dtype=np.float32), 
             'target_pose' : spaces.Box(low=-100.0, high=100.0, shape=(2,), dtype=np.float32),     
-            'global_path': spaces.Box(low=-50.0, high=50.0, shape=(100,2), dtype=np.float32),
+            'global_path': spaces.Box(low=-50.0, high=50.0, shape=(40,2), dtype=np.float32),
         })
 
     def _initialise(self):
@@ -246,6 +251,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
             'reward': [],
         }
         self.relativeGoal = None
+        self.temp_target_pose = None
         self.angularVelocityCounter = 0
         self.pathArrayConverted = []
         self.collision = False
@@ -269,6 +275,9 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.pathArray = None
         self.mapArray = None
         self.mapUpdateData = None
+        self.initialDistanceTemp = None
+        self.distanceToGoal = None
+
     
     def step(self, action):
         self.counter += 1
@@ -291,29 +300,32 @@ class CustomGymnasiumEnvNav2(gym.Env):
         if ( self.scan_data and self.speed_twist and self.currentPose and self.pathArray):
             if self.counter ==1:
                 self.subscribeNode.get_logger().info("Running New Episode")
-            
-            #find the pose of the target in the global frame
-            self._findRelativeGoal()
+            if (self.counter % self.temp_target_update_interval == 0 or self.initialDistanceTemp < self.newDistanceToTarget or self.newDistanceToTarget < 0.5):
+                lookAheadDist = min(len(self.pathArray) - 1, self.lookAheadDist)
+                self.temp_target_pose = self.pathArray[lookAheadDist].pose
+                self._findRelativeGoal()
+                self.initialDistanceTemp = self._getDistance()
+            else:
+                #this is now relative to the look ahead distance
+                self._findRelativeGoal()
 
+            self.pathAngle = self._calculate_heading_angle(self.currentPose, self.temp_target_pose)
             #this will take the path array that is given and convert the poses in the array into an array of x,y coordinates
             self._convertPathArray()
-
             #process all the Lidar observations and update lidar array of historical observations
             self.closestObstacle = min(self.scan_data.ranges)  #find the closest obstacle
             self.obstacleAngle = self.scan_data.ranges.index(self.closestObstacle) * 0.5625
             self._roundLidar()
             self._updateLidar()
-
             self.lastDistanceToTarget = self.newDistanceToTarget
             self.newDistanceToTarget = self._getDistance()
-
-            lookAheadDist = min(len(self.pathArray) - 1, self.lookAheadDist)
-            self.pathAngle = self._calculate_heading_angle(self.currentPose, self.pathArray[lookAheadDist].pose)
-
             if self.lastDistanceToTarget:
                 self.changeInDistanceToTarget = self.newDistanceToTarget - self.lastDistanceToTarget
+
             self.linearVelocity= round(self.speed_twist.linear.x, 2) 
             self.angularVelocity = round(self.speed_twist.angular.z,2)
+
+            self.distanceToGoal = m.sqrt((self.target_pose.position.x - self.currentPose.position.x)**2 + (self.target_pose.position.y - self.currentPose.position.y)**2 )
 
             #this is us updating the reward class variable with 
             self._calculateReward()
@@ -328,7 +340,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
                 'heading_error': self.pathAngle,
                 'relative_goal': self.relativeGoal,
                 'current_pose': [self.currentPose.position.x, self.currentPose.position.y],  
-                'target_pose': [self.target_pose.position.x, self.target_pose.position.y] ,      
+                'target_pose': [self.temp_target_pose.position.x, self.temp_target_pose.position.y] ,      
                 'global_path': self.pathArrayConverted,
             }
             # Store values for plotting
@@ -418,16 +430,15 @@ class CustomGymnasiumEnvNav2(gym.Env):
 
         #get udpated observations from odometry
         if ( self.scan_data and self.speed_twist and self.currentPose and self.pathArray):
+            lookAheadDist = min(len(self.pathArray) - 1, self.lookAheadDist)
+            self.temp_target_pose = self.pathArray[lookAheadDist].pose
             self._findRelativeGoal()
             self._roundLidar()
             self._updateLidar()
             self.newDistanceToTarget = self._getDistance()
             self.linearVelocity= round(self.speed_twist.linear.x, 2) 
             self.angularVelocity = round(self.speed_twist.angular.z,2)
-            if len(self.pathArray) > self.lookAheadDist:
-                self.pathAngle = self._calculate_heading_angle(self.currentPose, self.pathArray[self.lookAheadDist].pose)
-            else:
-                self.pathAngle = self._calculate_heading_angle(self.currentPose, self.pathArray[-1].pose)
+            self.pathAngle = self._calculate_heading_angle(self.currentPose, self.temp_target_pose)
             self._convertPathArray()
             self.subscribeNode.get_logger().info(f"{self.linearVelocity} ,{self.angularVelocity} {self.pathAngle}, {self.relativeGoal}")
             observation = {
@@ -437,7 +448,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
                 'heading_error': self.pathAngle,
                 'relative_goal': self.relativeGoal,
                 'current_pose': [self.currentPose.position.x, self.currentPose.position.y],  
-                'target_pose': [self.target_pose.position.x, self.target_pose.position.y] ,      
+                'target_pose': [self.temp_target_pose.position.x, self.temp_target_pose.position.y] ,      
                 'global_path': self.pathArrayConverted,
             }
         else:
@@ -457,8 +468,8 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.target_pose.position.y = float(np.random.randint(-9, 9))
 
     def _convertPathArray(self):
-        self.pathArrayConverted = np.zeros((100, 2), dtype=np.float32)  
-        path_length = min(len(self.pathArray), 100) 
+        self.pathArrayConverted = np.zeros((self.lookAheadDist, 2), dtype=np.float32)  
+        path_length = min(len(self.pathArray), self.lookAheadDist) 
         for i in range(path_length):
             self.pathArrayConverted[i] = [self.pathArray[i].pose.position.x, self.pathArray[i].pose.position.y]
         
@@ -473,6 +484,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
         time_penalty = -0.005  # Small penalty per time step
         goal_reached_bonus = 100  # Large bonus for reaching the goal
         collision_penalty = -50  # High penalty for collisions
+        temp_target_update = 20
 
         # Base reward
         reward = 0
@@ -502,8 +514,11 @@ class CustomGymnasiumEnvNav2(gym.Env):
 
         # Check for terminal conditions and apply appropriate rewards/penalties
         if self.newDistanceToTarget < 0.5:  # Goal reached
+            reward += temp_target_update
+            self.subscribeNode.get_logger().info("Temp reached!")
+        if self.distanceToGoal < 0.5:  # Goal reached
             reward += goal_reached_bonus
-            self.subscribeNode.get_logger().info("Goal reached!")
+            self.subscribeNode.get_logger().info("We reached the goal!")
         elif self.closestObstacle < 0.5 and self.obstacleAngle >= 90 and self.obstacleAngle <= 270 :  # Collision with obstacle
             reward += collision_penalty
             self.collision = True
@@ -581,7 +596,6 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.lidarTracking[0] = self.scan_data.ranges
 
     def _findRelativeGoal(self):
-      
         # Extract robot's current position and orientation (yaw) in the global frame
         x_robot = self.currentPose.position.x
         y_robot = self.currentPose.position.y
@@ -592,8 +606,8 @@ class CustomGymnasiumEnvNav2(gym.Env):
             self.currentPose.orientation.w
         )
 
-        x_goal = self.target_pose.position.x
-        y_goal = self.target_pose.position.y
+        x_goal = self.temp_target_pose.position.x
+        y_goal = self.temp_target_pose.position.y
         
         dx = x_goal - x_robot
         dy = y_goal - y_robot
