@@ -14,6 +14,7 @@ class GraphPath(Node):
         # Create two distinct subscriptions
         self.goal_sub = self.create_subscription(PoseStamped, '/goal_pose', self.goal_callback, 10)
         self.pose_sub = self.create_subscription(PoseWithCovarianceStamped, '/amcl_pose', self.pose_callback, 10)
+        self.counter = 0
         
         # self.timer = self.create_timer(1, self.timer_callback)
     
@@ -28,7 +29,7 @@ class GraphPath(Node):
         self.dic["type"].append("position")
         self.dic["x"].append(position.x)
         self.dic["y"].append(position.y)
-        if self.dic["type"]:  # Check if there's any data to write
+        if self.dic["type"] and len(self.dic["type"]) % 1000 == 0:  # Check if there's any data to write
             df = pd.DataFrame(self.dic)
             df.to_csv("/home/parakram/tut_ws/src/robot_motion_controller/robot_motion_controller/csv/test.csv", index=False)
             self.get_logger().info("CSV WRITTEN")
