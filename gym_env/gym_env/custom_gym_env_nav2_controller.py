@@ -286,7 +286,6 @@ class CustomGymnasiumEnvNav2(gym.Env):
     def step(self, action):
         #the function includes a step counter to keep track of terminal //..condition
         start_time = time.perf_counter()  # Start the timer
-
         self.counter += 1
         linear_vel = action[0] * 5.0  
         angular_vel = action[1] * 3.14 

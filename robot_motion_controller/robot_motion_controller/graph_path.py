@@ -11,7 +11,6 @@ class GraphPath(Node):
     def __init__(self):
         super().__init__("graph_path")
         self.dic = {"type": [], "x": [], "y": []}
-        
         # Create two distinct subscriptions
         self.goal_sub = self.create_subscription(PoseStamped, '/goal_pose', self.goal_callback, 10)
         self.pose_sub = self.create_subscription(PoseWithCovarianceStamped, '/amcl_pose', self.pose_callback, 10)
@@ -33,12 +32,6 @@ class GraphPath(Node):
             df = pd.DataFrame(self.dic)
             df.to_csv("/home/parakram/tut_ws/src/robot_motion_controller/robot_motion_controller/csv/test.csv", index=False)
             self.get_logger().info("CSV WRITTEN")
-
-    # def timer_callback(self):
-    #     if self.dic["type"]:  # Check if there's any data to write
-    #         df = pd.DataFrame(self.dic)
-    #         df.to_csv("/home/parakram/tut_ws/src/robot_motion_controller/robot_motion_controller/csv/test.csv", index=False)
-    #         self.get_logger().info("CSV WRITTEN")
 
 # The code below should be left as is
 def main(args=None):
