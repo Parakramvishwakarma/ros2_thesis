@@ -238,6 +238,17 @@ class CustomGymnasiumEnvNav2(gym.Env):
         })
 
     def _initialise(self):
+
+        self.data = {
+            'timesteps': [],
+            'heading_error': [],
+            'change_distance': [],
+            'linear_velocity' : [],
+            'angular_speed' : [],
+            'path_deviation': [],
+            'closest_obstacle': [],
+            'reward': [],
+        }
         self.relativeGoal = None
         self.angularVelocityCounter = 0
         self.pathArrayConverted = []
@@ -264,9 +275,10 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.mapUpdateData = None
         self.closestPathPointIndex  = None
         self.closestPathDistance = None
+
+
     def step(self, action):
         #the function includes a step counter to keep track of terminal //..condition
-        start_time = time.perf_counter()  # Start the timer
         self.counter += 1
         linear_vel = action[0] * 5.0  
         angular_vel = action[1] * 3.14 
@@ -340,9 +352,20 @@ class CustomGymnasiumEnvNav2(gym.Env):
         else:
             truncated = False
 
-        end_time = time.perf_counter()  # End the timer
-        execution_time = end_time - start_time  # Calculate the elapsed time
-        # self.subscribeNode.get_logger().info(f"Step function execution time: {execution_time:.6f} seconds")
+          # Store values for plotting
+        self.data['timesteps'].append(self.counter)
+        self.data['heading_error'].append(self.pathAngle)
+        self.data['change_distance'].append(self.changeInDistanceToTarget)
+        self.data['linear_velocity'].append(self.linearVelocity)
+        self.data['angular_speed'].append(abs(self.angularVelocity))
+        self.data['path_deviation'].append(self.closestPathDistance)
+        self.data['closest_obstacle'].append(self.closestObstacle)
+        self.data['reward'].append(self.reward)
+
+        # Check if it's time to plot
+        if len(self.data['reward']) % self.plot_interval == 0:
+            df = pd.DataFrame.from_dict(self.data)
+            df.to_csv("../data.csv")
         return observation, self.reward, terminated, truncated, {}
     
 
