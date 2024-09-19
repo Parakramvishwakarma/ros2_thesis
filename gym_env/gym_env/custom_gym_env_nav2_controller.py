@@ -368,17 +368,17 @@ class CustomGymnasiumEnvNav2(gym.Env):
         while self.collision:
             # self._backup_and_spin()
             if self.obstacleAngle >=135 and self.obstacleAngle <= 225:
-                self.subscribeNode.get_logger().info(f"Running Backup Manouvre obstacle at front")
+                self.subscribeNode.get_logger().info(f"Running Backup Manouvre obstacle at front {self.obstacleAngle}")
                 self.publishNode.sendAction(-5.0, 0.0)
             elif self.obstacleAngle > 225 and self.obstacleAngle <= 315:
-                self.subscribeNode.get_logger().info(f"Obstacle on the left")
-                self.publishNode.sendAction(-5.0, -1.0)
+                self.subscribeNode.get_logger().info(f"Obstacle on the left {self.obstacleAngle}")
+                self.publishNode.sendAction(0.0, -3.0)
             elif self.obstacleAngle < 45 or self.obstacleAngle > 315:
-                self.subscribeNode.get_logger().info(f"Obstacle at the back running front Manouvre")
+                self.subscribeNode.get_logger().info(f"Obstacle at the back running front Manouvre {self.obstacleAngle}")
                 self.publishNode.sendAction(5.0, 0.0)
             elif self.obstacleAngle >=45 or self.obstacleAngle < 135 :
-                self.subscribeNode.get_logger().info(f"Obstacle on the right")
-                self.publishNode.sendAction(5.0, 1.0)
+                self.subscribeNode.get_logger().info(f"Obstacle on the right {self.obstacleAngle}")
+                self.publishNode.sendAction(0.0, 3.0)
             time.sleep(2)
             rclpy.spin_once(self.subscribeNode, timeout_sec=1.0)
             self.scan_data = self.subscribeNode.scan_data
