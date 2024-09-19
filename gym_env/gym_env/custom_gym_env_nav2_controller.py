@@ -477,10 +477,14 @@ class CustomGymnasiumEnvNav2(gym.Env):
         # Base reward
         reward = 0
 
+        normalized_linear_velocity = self.linearVelocity / 5.0  # Normalized to range [-1, 1]
+        normalized_angular_velocity = self.angularVelocity / 3.14  # Normalized to range [-1, 1]
+
         # Distance to the goal reward
         if self.lastDistanceToTarget is not None:
-            distance_reward = (self.lastDistanceToTarget - self.newDistanceToTarget)
-            reward += beta * distance_reward
+            progress = (self.lastDistanceToTarget - self.newDistanceToTarget) /  self.newDistanceToTarget
+            # Progress as a percentage
+            reward += beta * progress  
 
         # Heading alignment reward (0 when aligned, pi when opposite)
         heading_reward = self.pathAngle
@@ -492,13 +496,13 @@ class CustomGymnasiumEnvNav2(gym.Env):
             reward += gamma * obstacle_penalty
 
         # Reward for maintaining a reasonable linear velocity
-        reward += roh * self.linearVelocity
+        reward += roh * normalized_linear_velocity
 
         # Penalty for excessive angular velocity
-        reward += mu * abs(self.angularVelocity)
+        reward += mu * abs(normalized_angular_velocity)
 
         # Add a small time penalty to encourage quicker task completion
-        # reward += self.counter * time_penalty
+        reward += self.counter * time_penalty
 
         # Check for terminal conditions and apply appropriate rewards/penalties
         if self.newDistanceToTarget < 0.5:  # Goal reached
