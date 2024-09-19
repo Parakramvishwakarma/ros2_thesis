@@ -359,7 +359,6 @@ class CustomGymnasiumEnvNav2(gym.Env):
         if terminated == False and self.counter > self.episode_length:
             self.subscribeNode.get_logger().info("Episode Finished")
             truncated = True
-            self.reward = -1
         else:
             truncated = False
 
@@ -513,13 +512,13 @@ class CustomGymnasiumEnvNav2(gym.Env):
             reward += gamma * obstacle_penalty
 
         # Reward for maintaining a reasonable linear velocity
-        reward += roh * self.linearVelocity
+        reward += roh * normalized_linear_velocity
 
         # Penalty for excessive angular velocity
-        reward += mu * abs(self.angularVelocity)
+        reward += mu * abs(normalized_angular_velocity)
 
         # Add a small time penalty to encourage quicker task completion
-        reward += self.counter * time_penalty
+        # reward += self.counter * time_penalty
 
         reward += delta * self.closestPathDistance  # Penalize deviations
 
@@ -668,7 +667,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.closestPathPointIndex =  closest_point_index
 
     def _findPathAngle(self):
-        lookaheadPointIndex = min(self.closestPathPointIndex + 20, len(self.pathArray) - 1)
+        lookaheadPointIndex = min(self.closestPathPointIndex + 40, len(self.pathArray) - 1)
         lookAhead = self.pathArray[lookaheadPointIndex].pose
         return self._calculate_heading_angle(self.currentPose, lookAhead)
 
