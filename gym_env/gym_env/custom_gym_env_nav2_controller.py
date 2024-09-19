@@ -202,13 +202,6 @@ class CustomGymnasiumEnvNav2(gym.Env):
         #define the target pose for training
         self.target_pose = None
         self.relativeGoal = None
-
-        #set reward parameters
-        self.alpha = -0.25 #this one is for the path angle
-        self.beta = 1 # this one is for the distance from the target
-        self.gamma  = -0.45 #this is for closest obstacle
-        self.roh = 0.3 #this is for linear.x speed
-        self.mu  = -0.2 #this is penalty for spinnging
     
         #scanner parameters
         self.scannerRange = [0.164000004529953, 12.0]
@@ -285,7 +278,6 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.publishNode.sendAction(linear_vel, angular_vel) #send action from the model
 
         rclpy.spin_once(self.publishNode, timeout_sec=1.0)
-    
         # Wait for new scan and pose data
         rclpy.spin_once(self.subscribeNode, timeout_sec=1.0)
 
@@ -481,13 +473,14 @@ class CustomGymnasiumEnvNav2(gym.Env):
     def _calculateReward(self):
         # Coefficients for each reward component
         alpha = -0.5  # Penalty for deviation from the path (heading error)
-        beta = 2.5    # Reward for reducing distance to the goal
+        beta = 3.0    # Reward for reducing distance to the goal
         gamma = -0.5  # Penalty for proximity to obstacles
-        roh = 0.4     # Reward for maintaining linear speed
+        roh = 0.7    # Reward for maintaining linear speed
         mu = -0.3     # Penalty for high angular velocity
         delta = -0.8  # Path deviation penalty
         time_penalty = -0.005  # Small penalty per time step
         goal_reached_bonus = 150  # Large bonus for reaching the goal
+        velocity_change_penalty = -0.3  # Penalty for sudden changes in velocity
         collision_penalty = -100  # High penalty for collisions
 
         # Base reward
@@ -521,6 +514,16 @@ class CustomGymnasiumEnvNav2(gym.Env):
         # reward += self.counter * time_penalty
 
         reward += delta * self.closestPathDistance  # Penalize deviations
+
+         # Add a penalty for sudden changes in linear or angular velocity (to encourage smooth movements)
+        if self.lastLinearVelocity is not None and self.lastAngularVelocity is not None:
+            linear_velocity_change = abs(self.linearVelocity - self.lastLinearVelocity) / 5.0  # Normalize change
+            angular_velocity_change = abs(self.angularVelocity - self.lastAngularVelocity) / 3.14  # Normalize change
+            reward += velocity_change_penalty * (linear_velocity_change + angular_velocity_change)
+
+        # Store the current velocities for the next step (to calculate change)
+        self.lastLinearVelocity = self.linearVelocity
+        self.lastAngularVelocity = self.angularVelocity
 
         # Check for terminal conditions and apply appropriate rewards/penalties
         if self.newDistanceToTarget < 0.5:  # Goal reached
