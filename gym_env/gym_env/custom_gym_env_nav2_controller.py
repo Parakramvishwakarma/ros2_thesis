@@ -473,6 +473,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
         time_penalty = -0.005  # Small penalty per time step
         goal_reached_bonus = 100  # Large bonus for reaching the goal
         collision_penalty = -50  # High penalty for collisions
+        velocity_change_penalty = -0.3 #Penalty for change in velocities
 
         # Base reward
         reward = 0
@@ -503,6 +504,16 @@ class CustomGymnasiumEnvNav2(gym.Env):
 
         # Add a small time penalty to encourage quicker task completion
         reward += self.counter * time_penalty
+              # Add a penalty for sudden changes in linear or angular velocity (to encourage smooth movements)
+        if self.lastLinearVelocity is not None and self.lastAngularVelocity is not None:
+            linear_velocity_change = abs(self.linearVelocity - self.lastLinearVelocity) / 5.0  # Normalize change
+            angular_velocity_change = abs(self.angularVelocity - self.lastAngularVelocity) / 3.14  # Normalize change
+            reward += velocity_change_penalty * (linear_velocity_change + angular_velocity_change)
+
+        # Store the current velocities for the next step (to calculate change)
+        self.lastLinearVelocity = self.linearVelocity
+        self.lastAngularVelocity = self.angularVelocity
+
 
         # Check for terminal conditions and apply appropriate rewards/penalties
         if self.newDistanceToTarget < 0.5:  # Goal reached
