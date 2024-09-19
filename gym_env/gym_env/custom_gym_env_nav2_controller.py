@@ -372,7 +372,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
     
 
     def reset(self, seed=None, options=None):
-        super().reset(seed=seed, options=options
+        super().reset(seed=seed, options=options)
         if len(self.data['reward']):
             df = pd.DataFrame.from_dict(self.data)
             df.to_csv("../data.csv")
@@ -384,17 +384,17 @@ class CustomGymnasiumEnvNav2(gym.Env):
         while self.collision:
             # self._backup_and_spin()
             if self.obstacleAngle >=135 and self.obstacleAngle <= 225:
-                self.subscribeNode.get_logger().info(f"Running Backup Manouvre obstacle at front")
+                self.subscribeNode.get_logger().info(f"Running Backup Manouvre obstacle at front {self.obstacleAngle}")
                 self.publishNode.sendAction(-5.0, 0.0)
             elif self.obstacleAngle > 225 and self.obstacleAngle <= 315:
-                self.subscribeNode.get_logger().info(f"Obstacle on the left")
-                self.publishNode.sendAction(-5.0, -1.0)
+                self.subscribeNode.get_logger().info(f"Obstacle on the left {self.obstacleAngle}")
+                self.publishNode.sendAction(0.0, -3.0)
             elif self.obstacleAngle < 45 or self.obstacleAngle > 315:
-                self.subscribeNode.get_logger().info(f"Obstacle at the back running front Manouvre")
+                self.subscribeNode.get_logger().info(f"Obstacle at the back running front Manouvre {self.obstacleAngle}")
                 self.publishNode.sendAction(5.0, 0.0)
             elif self.obstacleAngle >=45 or self.obstacleAngle < 135 :
-                self.subscribeNode.get_logger().info(f"Obstacle on the right")
-                self.publishNode.sendAction(5.0, 1.0)
+                self.subscribeNode.get_logger().info(f"Obstacle on the right {self.obstacleAngle}")
+                self.publishNode.sendAction(0.0, 3.0)
             time.sleep(2)
             rclpy.spin_once(self.subscribeNode, timeout_sec=1.0)
             self.scan_data = self.subscribeNode.scan_data
@@ -494,10 +494,14 @@ class CustomGymnasiumEnvNav2(gym.Env):
         # Base reward
         reward = 0
 
-        # Distance to the goal reward
+        normalized_linear_velocity = self.linearVelocity / 5.0  # Normalized to range [-1, 1]
+        normalized_angular_velocity = self.angularVelocity / 3.14  # Normalized to range [-1, 1]
+
+
         if self.lastDistanceToTarget is not None:
-            distance_reward = (self.lastDistanceToTarget - self.newDistanceToTarget)
-            reward += beta * distance_reward
+            progress = (self.lastDistanceToTarget - self.newDistanceToTarget) /  self.newDistanceToTarget
+            # Progress as a percentage
+            reward += beta * progress  
 
         # Heading alignment reward (0 when aligned, pi when opposite)
         heading_reward = self.pathAngle
@@ -515,7 +519,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
         reward += mu * abs(self.angularVelocity)
 
         # Add a small time penalty to encourage quicker task completion
-        # reward += self.counter * time_penalty
+        reward += self.counter * time_penalty
 
         reward += delta * self.closestPathDistance  # Penalize deviations
 
