@@ -230,6 +230,9 @@ class CustomGymnasiumEnvNav2(gym.Env):
             'global_path': spaces.Box(low=-50.0, high=50.0, shape=(100,2), dtype=np.float32),
         })
 
+         # Store the current velocities for the next step (to calculate change)
+        self.lastLinearVelocity = None
+        self.lastAngularVelocity = None
     def _initialise(self):
 
         self.data = {
@@ -268,6 +271,9 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.mapUpdateData = None
         self.closestPathPointIndex  = None
         self.closestPathDistance = None
+                # Store the current velocities for the next step (to calculate change)
+        self.lastLinearVelocity = None
+        self.lastAngularVelocity = None
 
 
     def step(self, action):
