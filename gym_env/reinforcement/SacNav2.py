@@ -55,7 +55,7 @@ print("Training Results Written")
 
 #plot training results
 results_plotter.plot_results([log_dir], 1e5, results_plotter.X_TIMESTEPS, "SAC Results")
-plot_results(log_dir)
+plot_results(log_dir, f"Learning Curve, lr={lr} and episode length = {2000}")
 
 
 
