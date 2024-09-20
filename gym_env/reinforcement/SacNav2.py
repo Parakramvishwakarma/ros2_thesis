@@ -37,17 +37,17 @@ os.makedirs(path, exist_ok=True)
 
 lr = 0.0002
 
-env = CustomGymnasiumEnvNav2()
+# env = CustomGymnasiumEnvNav2()
 
-env = Monitor(env, log_dir)
+# env = Monitor(env, log_dir)
 
-model = SAC("MultiInputPolicy", env, learning_rate=lr, verbose=1)
-#learn the model
-model.learn(total_timesteps=200000, log_interval=10)
-#save learnt model
-model.save(f"./models/SAC_trained_nav2_{lr}_2000")
+# model = SAC("MultiInputPolicy", env, learning_rate=lr, verbose=1)
+# #learn the model
+# model.learn(total_timesteps=200000, log_interval=10)
+# #save learnt model
+# model.save(f"./models/SAC_trained_nav2_{lr}_2000")
 
-#get training results and save to csv
+# #get training results and save to csv
 df = load_results(log_dir)
 # print(f"There are {len(df)} results")
 df.to_csv(f"./results/SAC_training_results_18_09_lr_{lr}_epLen_{2000}.csv", index=False)
