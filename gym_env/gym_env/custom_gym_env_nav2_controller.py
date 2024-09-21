@@ -156,7 +156,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
         super(CustomGymnasiumEnvNav2, self).__init__()
         rclpy.init()
         self.counter = 0
-        self.episode_length = 2000
+        self.episode_length = 4000
         #inititalise variables
 
         self.data = {
@@ -170,7 +170,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
             'reward': [],
         }
         
-        self.plot_interval = 3000  # Interval for plotting
+        self.plot_interval = 4000  # Interval for plotting
 
         #these are all the intermediary variables used to create the state and the reward for the agent
         self.angularVelocityCounter = 0
@@ -229,10 +229,10 @@ class CustomGymnasiumEnvNav2(gym.Env):
             'target_pose' : spaces.Box(low=-100.0, high=100.0, shape=(2,), dtype=np.float32),     
             'global_path': spaces.Box(low=-50.0, high=50.0, shape=(100,2), dtype=np.float32),
         })
-
-         # Store the current velocities for the next step (to calculate change)
+        # Store the current velocities for the next step (to calculate change)
         self.lastLinearVelocity = None
         self.lastAngularVelocity = None
+
     def _initialise(self):
 
         self.data = {
@@ -359,7 +359,6 @@ class CustomGymnasiumEnvNav2(gym.Env):
             truncated = True
         else:
             truncated = False
-
 
         # Check if it's time to plot
         if len(self.data['reward']) % self.plot_interval == 0:
