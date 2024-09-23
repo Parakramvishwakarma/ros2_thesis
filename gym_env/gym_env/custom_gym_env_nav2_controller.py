@@ -159,16 +159,6 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.episode_length = 4000
         #inititalise variables
 
-        self.data = {
-            'timesteps': [],
-            'heading_error': [],
-            'change_distance': [],
-            'linear_velocity' : [],
-            'angular_speed' : [],
-            'path_deviation': [],
-            'closest_obstacle': [],
-            'reward': [],
-        }
         
         self.plot_interval = 4000  # Interval for plotting
 
@@ -235,16 +225,6 @@ class CustomGymnasiumEnvNav2(gym.Env):
 
     def _initialise(self):
 
-        self.data = {
-            'timesteps': [],
-            'heading_error': [],
-            'change_distance': [],
-            'linear_velocity' : [],
-            'angular_speed' : [],
-            'path_deviation': [],
-            'closest_obstacle': [],
-            'reward': [],
-        }
         self.relativeGoal = None
         self.angularVelocityCounter = 0
         self.pathArrayConverted = []
@@ -337,15 +317,6 @@ class CustomGymnasiumEnvNav2(gym.Env):
                 'global_path': self.pathArrayConverted,
             }
 
-                      # Store values for plotting
-            self.data['timesteps'].append(self.counter)
-            self.data['heading_error'].append(self.pathAngle)
-            self.data['change_distance'].append(self.changeInDistanceToTarget)
-            self.data['linear_velocity'].append(self.linearVelocity)
-            self.data['angular_speed'].append(abs(self.angularVelocity))
-            self.data['path_deviation'].append(self.closestPathDistance)
-            self.data['closest_obstacle'].append(self.closestObstacle)
-            self.data['reward'].append(self.reward)
 
         else:
             self.subscribeNode.get_logger().info("Scan or observation data missing")
@@ -360,18 +331,11 @@ class CustomGymnasiumEnvNav2(gym.Env):
         else:
             truncated = False
 
-        # Check if it's time to plot
-        if len(self.data['reward']) % self.plot_interval == 0:
-            df = pd.DataFrame.from_dict(self.data)
-            df.to_csv("../data.csv")
         return observation, self.reward, terminated, truncated, {}
     
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed, options=options)
-        if len(self.data['reward']):
-            df = pd.DataFrame.from_dict(self.data)
-            df.to_csv("../data.csv")
         #reset the costmaps
         self.publishNode.clear_local_costmap()
         self.publishNode.clear_global_costmap()
@@ -494,9 +458,8 @@ class CustomGymnasiumEnvNav2(gym.Env):
         normalized_linear_velocity = self.linearVelocity / 5.0  # Normalized to range [-1, 1]
         normalized_angular_velocity = self.angularVelocity / 3.14  # Normalized to range [-1, 1]
 
-
         if self.lastDistanceToTarget is not None:
-            progress = (self.lastDistanceToTarget - self.newDistanceToTarget) /  self.newDistanceToTarget
+            progress = (self.lastDistanceToTarget - self.newDistanceToTarget)
             # Progress as a percentage
             reward += beta * progress  
 
@@ -519,17 +482,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
         # reward += self.counter * time_penalty
 
         reward += delta * self.closestPathDistance  # Penalize deviations
-
-         # Add a penalty for sudden changes in linear or angular velocity (to encourage smooth movements)
-        if self.lastLinearVelocity is not None and self.lastAngularVelocity is not None:
-            linear_velocity_change = abs(self.linearVelocity - self.lastLinearVelocity) / 5.0  # Normalize change
-            angular_velocity_change = abs(self.angularVelocity - self.lastAngularVelocity) / 3.14  # Normalize change
-            reward += velocity_change_penalty * (linear_velocity_change + angular_velocity_change)
-
-        # Store the current velocities for the next step (to calculate change)
-        self.lastLinearVelocity = self.linearVelocity
-        self.lastAngularVelocity = self.angularVelocity
-
+   
         # Check for terminal conditions and apply appropriate rewards/penalties
         if self.newDistanceToTarget < 0.5:  # Goal reached
             reward += goal_reached_bonus
