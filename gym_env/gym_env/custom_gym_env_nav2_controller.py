@@ -103,7 +103,7 @@ class Publisher(Node):
 
         #services to clear the global and the local costmap:
         self.local_costmap_clear_client = self.create_client(ClearEntireCostmap, '/local_costmap/clear_entirely_local_costmap')
-        self.global_costmap_clear_client = self.create_client(ClearEntireCostmap, '/local_costmap/clear_entirely_local_costmap')
+        self.global_costmap_clear_client = self.create_client(ClearEntireCostmap, '/global_costmap/clear_entirely_global_costmap')
         
         # Ensure service servers are available
         self.local_costmap_clear_client.wait_for_service(timeout_sec=5.0)
@@ -447,9 +447,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
         roh = 0.7    # Reward for maintaining linear speed
         mu = -0.3     # Penalty for high angular velocity
         delta = -0.8  # Path deviation penalty
-        time_penalty = -0.005  # Small penalty per time step
         goal_reached_bonus = 1000  # Large bonus for reaching the goal
-        velocity_change_penalty = -0.3  # Penalty for sudden changes in velocity
         collision_penalty = -500  # High penalty for collisions
 
         # Base reward
@@ -459,7 +457,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
         normalized_angular_velocity = self.angularVelocity / 3.14  # Normalized to range [-1, 1]
 
         if self.lastDistanceToTarget is not None:
-            progress = (self.lastDistanceToTarget - self.newDistanceToTarget)/self.newDistanceToTarget
+            progress = (self.lastDistanceToTarget - self.newDistanceToTarget)
             # Progress as a percentage
             reward += beta * progress  
 
@@ -560,17 +558,6 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.lidarTracking[1] = self.lidarTracking[0]
         self.lidarTracking[0] = self.scan_data.ranges
 
-    def _backup_and_spin(self):
-        """
-        Backs up and spins the robot 180 degrees if a collision is detected.
-        """
-        # Send backup action
-        self.publishNode.send_backup_goal() 
-
-        # Send spin action
-        self.publishNode.send_spin_goal()  # Spin 180 degrees
-
-        self.subscribeNode.get_logger().info("Executed backup and spin recovery maneuver")
     
     def _findRelativeGoal(self):
       
