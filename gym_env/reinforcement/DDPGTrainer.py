@@ -36,7 +36,7 @@ path = os.path.join(parent, log_dir)
 # print("path", path)
 os.makedirs(path, exist_ok=True)
 
-lr = 0.0001
+lr = 0.00005
 
 env = CustomGymnasiumEnvNav2()
 

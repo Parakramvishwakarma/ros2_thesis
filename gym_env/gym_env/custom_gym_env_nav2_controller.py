@@ -357,13 +357,13 @@ class CustomGymnasiumEnvNav2(gym.Env):
             if self.obstacleAngle >=135 and self.obstacleAngle <= 225:
                 self.subscribeNode.get_logger().info(f"Running Backup Manouvre obstacle at front {self.obstacleAngle}")
                 self.publishNode.sendAction(-5.0, 0.0)
-            elif self.obstacleAngle > 225 and self.obstacleAngle <= 315:
+            elif self.obstacleAngle > 225 and self.obstacleAngle <= 285:
                 self.subscribeNode.get_logger().info(f"Obstacle on the left {self.obstacleAngle}")
                 self.publishNode.sendAction(0.0, -3.0)
-            elif self.obstacleAngle < 45 or self.obstacleAngle > 315:
+            elif self.obstacleAngle < 75 or self.obstacleAngle > 285:
                 self.subscribeNode.get_logger().info(f"Obstacle at the back running front Manouvre {self.obstacleAngle}")
                 self.publishNode.sendAction(5.0, 0.0)
-            elif self.obstacleAngle >=45 or self.obstacleAngle < 135 :
+            elif self.obstacleAngle >=75 or self.obstacleAngle < 135 :
                 self.subscribeNode.get_logger().info(f"Obstacle on the right {self.obstacleAngle}")
                 self.publishNode.sendAction(0.0, 3.0)
             time.sleep(2)
@@ -465,8 +465,8 @@ class CustomGymnasiumEnvNav2(gym.Env):
         # Base reward
         reward = 0
 
-        normalized_linear_velocity = self.linearVelocity / 5.0  # Normalized to range [-1, 1]
-        normalized_angular_velocity = self.angularVelocity / 3.14  # Normalized to range [-1, 1]
+        # normalized_linear_velocity = self.linearVelocity / 5.0  # Normalized to range [-1, 1]
+        # normalized_angular_velocity = self.angularVelocity / 3.14  # Normalized to range [-1, 1]
 
         if self.lastDistanceToTarget is not None:
             progress = (self.lastDistanceToTarget - self.newDistanceToTarget)
@@ -483,10 +483,10 @@ class CustomGymnasiumEnvNav2(gym.Env):
             reward += gamma * obstacle_penalty
 
         # Reward for maintaining a reasonable linear velocity
-        reward += roh * normalized_linear_velocity
+        reward += roh * self.linearVelocity
 
         # Penalty for excessive angular velocity
-        reward += mu * abs(normalized_angular_velocity)
+        reward += mu * abs(self.angularVelocity)
 
         reward += delta * self.closestPathDistance  # Penalize deviations
    
