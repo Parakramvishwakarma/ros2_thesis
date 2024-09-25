@@ -382,6 +382,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
         #reset variables
         self._initialise()
         self.publishNode.sendAction(0.0, 0.0)
+        time.sleep(5)
         if self.target_pose == None:
             self.target_pose = Pose()
             self.target_pose.position.x = 4.0
