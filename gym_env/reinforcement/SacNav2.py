@@ -31,21 +31,21 @@ def plot_results(log_folder, title="Learning Curve"):
 path = os.getcwd()
 parent = os.path.dirname(path)
 log_dir = "/tmp/gym/"
-path = os.path.join(parent, log_dir)
-# print("path", path)
-os.makedirs(path, exist_ok=True)
+# path = os.path.join(parent, log_dir)
+# # print("path", path)
+# os.makedirs(path, exist_ok=True)
 
 lr = 0.0001
 
-env = CustomGymnasiumEnvNav2()
+# env = CustomGymnasiumEnvNav2()
 
-env = Monitor(env, log_dir)
+# env = Monitor(env, log_dir)
 
-model = SAC("MultiInputPolicy", env, learning_rate=lr, verbose=1)
-#learn the model
-model.learn(total_timesteps=200000, log_interval=10)
-#save learnt model
-model.save(f"./models/SAC_trained_nav2_{lr}_1000")
+# model = SAC("MultiInputPolicy", env, learning_rate=lr, verbose=1)
+# #learn the model
+# model.learn(total_timesteps=200000, log_interval=10)
+# #save learnt model
+# model.save(f"./models/SAC_trained_nav2_{lr}_1000")
 
 # #get training results and save to csv
 df = load_results(log_dir)
