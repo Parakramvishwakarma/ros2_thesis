@@ -442,15 +442,15 @@ class CustomGymnasiumEnvNav2(gym.Env):
     def _calculateReward(self):
         # Coefficients for each reward component
         alpha = -0.5  # Penalty for deviation from the path (heading error)
-        beta = 3.0    # Reward for reducing distance to the goal
+        beta = 5.0    # Reward for reducing distance to the goal
         gamma = -0.5  # Penalty for proximity to obstacles
         roh = 0.7    # Reward for maintaining linear speed
         mu = -0.3     # Penalty for high angular velocity
         delta = -0.8  # Path deviation penalty
         time_penalty = -0.005  # Small penalty per time step
-        goal_reached_bonus = 150  # Large bonus for reaching the goal
+        goal_reached_bonus = 1000  # Large bonus for reaching the goal
         velocity_change_penalty = -0.3  # Penalty for sudden changes in velocity
-        collision_penalty = -100  # High penalty for collisions
+        collision_penalty = -500  # High penalty for collisions
 
         # Base reward
         reward = 0
@@ -459,7 +459,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
         normalized_angular_velocity = self.angularVelocity / 3.14  # Normalized to range [-1, 1]
 
         if self.lastDistanceToTarget is not None:
-            progress = (self.lastDistanceToTarget - self.newDistanceToTarget)
+            progress = (self.lastDistanceToTarget - self.newDistanceToTarget)/self.newDistanceToTarget
             # Progress as a percentage
             reward += beta * progress  
 
@@ -468,7 +468,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
         reward += alpha * heading_reward
 
         # Penalty for being too close to obstacles
-        if self.closestObstacle < 1.0:
+        if self.closestObstacle < 1.25:
             obstacle_penalty = (1 / self.closestObstacle)  # Higher penalty the closer the obstacle
             reward += gamma * obstacle_penalty
 
@@ -477,9 +477,6 @@ class CustomGymnasiumEnvNav2(gym.Env):
 
         # Penalty for excessive angular velocity
         reward += mu * abs(normalized_angular_velocity)
-
-        # Add a small time penalty to encourage quicker task completion
-        # reward += self.counter * time_penalty
 
         reward += delta * self.closestPathDistance  # Penalize deviations
    
@@ -632,33 +629,6 @@ class CustomGymnasiumEnvNav2(gym.Env):
         lookAhead = self.pathArray[lookaheadPointIndex].pose
         return self._calculate_heading_angle(self.currentPose, lookAhead)
 
-    def _process_costmap(self):
-        """
-        Processes the costmap data to identify unsafe regions around the robot.
-        """
-        if self.og_cost_map_grid is None:
-            return float('inf'), float('inf')  # Return high values if costmap is unavailable.
-
-        # Unpack the costmap data and metadata
-        costmap = np.array(self.og_cost_map_grid.data).reshape((self.og_cost_map_grid.info.height, 
-                                                                self.og_cost_map_grid.info.width))
-        resolution = self.og_cost_map_grid.info.resolution
-        origin = self.og_cost_map_grid.info.origin.position
-
-        # Robot's current position in the costmap frame
-        robot_x = int((self.currentPose.position.x - origin.x) / resolution)
-        robot_y = int((self.currentPose.position.y - origin.y) / resolution)
-
-        # Extract a small region around the robot
-        robot_area = costmap[max(0, robot_y - 2):min(costmap.shape[0], robot_y + 3), 
-                            max(0, robot_x - 2):min(costmap.shape[1], robot_x + 3)]
-
-        # Calculate the average and maximum cost in this area
-        average_cost = np.mean(robot_area[robot_area >= 0]) if np.any(robot_area >= 0) else 0  # Exclude unknown cells (-1)
-        max_cost = np.max(robot_area)
-
-        return average_cost, max_cost
-            
 
 
 
