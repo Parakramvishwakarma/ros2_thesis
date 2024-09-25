@@ -220,8 +220,8 @@ class CustomGymnasiumEnvNav2(gym.Env):
             'global_path': spaces.Box(low=-50.0, high=50.0, shape=(100,2), dtype=np.float32),
         })
         # Store the current velocities for the next step (to calculate change)
-        self.lastLinearVelocity = None
-        self.lastAngularVelocity = None
+        self.angularVelocityCounter = 0
+        self.lastAngVelocity = None
 
     def _initialise(self):
 
@@ -252,8 +252,9 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.closestPathPointIndex  = None
         self.closestPathDistance = None
                 # Store the current velocities for the next step (to calculate change)
-        self.lastLinearVelocity = None
-        self.lastAngularVelocity = None
+
+        self.lastAngVelocity = None
+        self.angularVelocityCounter = 0
 
 
     def step(self, action):
@@ -262,6 +263,15 @@ class CustomGymnasiumEnvNav2(gym.Env):
         linear_vel = action[0] * 5.0  
         angular_vel = action[1] * 3.14 
         self.publishNode.sendAction(linear_vel, angular_vel) #send action from the model
+
+        if self.lastAngVelocity == None:
+            self.lastAngVelocity = round(angular_vel, 3)
+        else:   
+            if self.lastAngVelocity == round(angular_vel, 3):
+                self.angularVelocityCounter += 1
+                self.subscribeNode.get_logger().info(f"repetitive omega #:{self.angularVelocityCounter}")
+            else:
+                self.lastAngVelocity = round(angular_vel, 3)        
 
         rclpy.spin_once(self.publishNode, timeout_sec=1.0)
         # Wait for new scan and pose data
@@ -317,7 +327,6 @@ class CustomGymnasiumEnvNav2(gym.Env):
                 'global_path': self.pathArrayConverted,
             }
 
-
         else:
             self.subscribeNode.get_logger().info("Scan or observation data missing")
             observation = self.observation_space.sample()
@@ -327,6 +336,8 @@ class CustomGymnasiumEnvNav2(gym.Env):
         #lastly if the episode is over and we have not terminated it then we end it and give a small negative reward for not reaching
         if terminated == False and self.counter > self.episode_length:
             self.subscribeNode.get_logger().info("Episode Finished")
+            truncated = True
+        elif self.angularVelocityCounter == 50:
             truncated = True
         else:
             truncated = False
