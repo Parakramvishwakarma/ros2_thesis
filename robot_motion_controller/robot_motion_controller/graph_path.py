@@ -31,7 +31,7 @@ class GraphPath(Node):
         self.dic["y"].append(position.y)
         if self.dic["type"] and len(self.dic["type"]) % 1000 == 0:  # Check if there's any data to write
             df = pd.DataFrame(self.dic)
-            df.to_csv("/home/parakram/tut_ws/src/robot_motion_controller/robot_motion_controller/csv/test.csv", index=False)
+            df.to_csv("/home/parakram/ros2_ws/src/robot_motion_controller/robot_motion_controller/csv/test.csv", index=False)
             self.get_logger().info("CSV WRITTEN")
 
 # The code below should be left as is

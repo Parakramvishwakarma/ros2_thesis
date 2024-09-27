@@ -264,14 +264,14 @@ class CustomGymnasiumEnvNav2(gym.Env):
         angular_vel = action[1] * 3.14 
         self.publishNode.sendAction(linear_vel, angular_vel) #send action from the model
 
-        if self.lastAngVelocity == None:
-            self.lastAngVelocity = round(angular_vel, 3)
-        else:   
-            if self.lastAngVelocity == round(angular_vel, 3):
-                self.angularVelocityCounter += 1
-                self.subscribeNode.get_logger().info(f"repetitive omega #:{self.angularVelocityCounter}")
-            else:
-                self.lastAngVelocity = round(angular_vel, 3)        
+        # if self.lastAngVelocity == None:
+        #     self.lastAngVelocity = round(angular_vel, 3)
+        # else:   
+        #     if self.lastAngVelocity == round(angular_vel, 3):
+        #         self.angularVelocityCounter += 1
+        #         self.subscribeNode.get_logger().info(f"repetitive omega #:{self.angularVelocityCounter}")
+        #     else:
+        #         self.lastAngVelocity = round(angular_vel, 3)        
 
         rclpy.spin_once(self.publishNode, timeout_sec=1.0)
         # Wait for new scan and pose data
@@ -337,8 +337,8 @@ class CustomGymnasiumEnvNav2(gym.Env):
         if terminated == False and self.counter > self.episode_length:
             self.subscribeNode.get_logger().info("Episode Finished")
             truncated = True
-        elif self.angularVelocityCounter == 50:
-            truncated = True
+        # elif self.angularVelocityCounter == 50:
+        #     truncated = True
         else:
             truncated = False
 
@@ -455,7 +455,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
         # Coefficients for each reward component
         alpha = -0.5  # Penalty for deviation from the path (heading error)
         beta = 5.0    # Reward for reducing distance to the goal
-        gamma = -0.5  # Penalty for proximity to obstacles
+        gamma = -2 # Penalty for proximity to obstacles
         roh = 0.7    # Reward for maintaining linear speed
         mu = -0.3     # Penalty for high angular velocity
         delta = -0.8  # Path deviation penalty

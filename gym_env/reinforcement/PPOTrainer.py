@@ -1,4 +1,4 @@
-from gym_env.custom_gym_env_nav2_controller import CustomGymnasiumEnvNav2
+# from gym_env.custom_gym_env_nav2_controller import CustomGymnasiumEnvNav2
 import numpy as np
 from stable_baselines3 import PPO
 from stable_baselines3.common import results_plotter
@@ -31,27 +31,27 @@ def plot_results(log_folder, title="Learning Curve"):
 path = os.getcwd()
 parent = os.path.dirname(path)
 log_dir = "/tmp/gym/"
-path = os.path.join(parent, log_dir)
-# print("path", path)
-os.makedirs(path, exist_ok=True)
+# path = os.path.join(parent, log_dir)
+# # print("path", path)
+# os.makedirs(path, exist_ok=True)
 
 lr = 0.0001
 
-env = CustomGymnasiumEnvNav2()
+# env = CustomGymnasiumEnvNav2()
 
-env = Monitor(env, log_dir)
+# env = Monitor(env, log_dir)
 
-model = PPO("MultiInputPolicy", env, learning_rate=lr, verbose=1)
-#learn the model
-model.learn(total_timesteps=200000, log_interval=10)
-#save learnt model
-model.save(f"./models/SAC_trained_nav2_{lr}_1000")
+# model = PPO("MultiInputPolicy", env, learning_rate=lr, verbose=1)
+# #learn the model
+# model.learn(total_timesteps=200000, log_interval=10)
+# #save learnt model
+# model.save(f"./models/SAC_trained_nav2_{lr}_1000")
 
 # #get training results and save to csv
 df = load_results(log_dir)
 # print(f"There are {len(df)} results")
-df.to_csv(f"./results/PPO_training_results_26_09_lr_{lr}_epLen_{4000}.csv", index=False)
-print("Training Results Written")
+# df.to_csv(f"./results/PPO_training_results_26_09_lr_{lr}_epLen_{4000}.csv", index=False)
+# print("Training Results Written")
 
 #plot training results
 results_plotter.plot_results([log_dir], 1e5, results_plotter.X_TIMESTEPS, "SAC Results")
