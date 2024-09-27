@@ -459,8 +459,8 @@ class CustomGymnasiumEnvNav2(gym.Env):
         roh = 0.7    # Reward for maintaining linear speed
         mu = -0.3     # Penalty for high angular velocity
         delta = -0.8  # Path deviation penalty
-        goal_reached_bonus = 1000  # Large bonus for reaching the goal
-        collision_penalty = -500  # High penalty for collisions
+        goal_reached_bonus = 2000  # Large bonus for reaching the goal
+        collision_penalty = -1000  # High penalty for collisions
 
         # Base reward
         reward = 0
@@ -470,8 +470,9 @@ class CustomGymnasiumEnvNav2(gym.Env):
 
         if self.lastDistanceToTarget is not None:
             progress = (self.lastDistanceToTarget - self.newDistanceToTarget)
-            # Progress as a percentage
-            reward += beta * progress  
+            if progress > 0:
+                # Progress as a percentage
+                reward += beta * progress  
 
         # Heading alignment reward (0 when aligned, pi when opposite)
         heading_reward = self.pathAngle
