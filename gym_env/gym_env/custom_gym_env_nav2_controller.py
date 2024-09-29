@@ -161,19 +161,8 @@ class CustomGymnasiumEnvNav2(gym.Env):
         super(CustomGymnasiumEnvNav2, self).__init__()
         rclpy.init()
         self.counter = 0
-        self.episode_length = 2000
+        self.episode_length = 4000
         #inititalise variables
-
-        self.data = {
-            'timesteps': [],
-            'heading_error': [],
-            'change_distance': [],
-            'linear_velocity' : [],
-            'angular_speed' : [],
-            'closest_obstacle': [],
-            'reward': [],
-        }
-        self.plot_interval = 10  # Interval for plotting
 
         #these are all the intermediary variables used to create the state and the reward for the agent
         self.angularVelocityCounter = 0
@@ -203,13 +192,6 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.target_pose = None
         self.relativeGoal = None
 
-        #set reward parameters
-        self.alpha = -0.25 #this one is for the path angle
-        self.beta = 1 # this one is for the distance from the target
-        self.gamma  = -0.45 #this is for closest obstacle
-        self.roh = 0.3 #this is for linear.x speed
-        self.mu  = -0.2 #this is penalty for spinnging
-    
         #scanner parameters
         self.scannerRange = [0.164000004529953, 12.0]
         self.scannerIncrementRads = 0.009817477315664291
@@ -293,10 +275,9 @@ class CustomGymnasiumEnvNav2(gym.Env):
             self.closestObstacle = min(self.scan_data.ranges) #find the closest obstacle
             self.obstacleAngle = round(self.scan_data.ranges.index(self.closestObstacle) * 0.5625,2)
             self.closestObstacle = round(self.closestObstacle, 2)
-            
             self._roundLidar()
             self._updateLidar()
-
+            
             self.lastDistanceToTarget = self.newDistanceToTarget
             self.newDistanceToTarget = self._getDistance()
 
@@ -342,10 +323,6 @@ class CustomGymnasiumEnvNav2(gym.Env):
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed, options=options)
-        if len(self.data['reward']):
-            print(self.data)
-            df = pd.DataFrame.from_dict(self.data)
-            df.to_csv("../data/rewards_data.csv")
         #reset the costmaps
         self.publishNode.clear_local_costmap()
         self.publishNode.clear_global_costmap()
