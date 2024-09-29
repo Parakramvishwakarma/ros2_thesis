@@ -23,7 +23,7 @@ def plot_results(log_folder, title="Learning Curve"):
     plt.xlabel("Number of Timesteps")
     plt.ylabel("Rewards")
     plt.title(title)
-    plt.savefig('./graphs/SAC_results.png')
+    plt.savefig('./graphs/SAC_results_29_09.png')
     print("Graph Saved")
     plt.show()
 
@@ -35,27 +35,27 @@ path = os.path.join(parent, log_dir)
 # print("path", path)
 os.makedirs(path, exist_ok=True)
 
-lr = 0.0002
+lr = 0.0001
 
-# env = CustomGymnasiumEnvNav2()
+env = CustomGymnasiumEnvNav2()
 
-# env = Monitor(env, log_dir)
+env = Monitor(env, log_dir)
 
-# model = SAC("MultiInputPolicy", env, learning_rate=lr, verbose=1)
-# #learn the model
-# model.learn(total_timesteps=200000, log_interval=10)
-# #save learnt model
-# model.save(f"./models/SAC_trained_nav2_{lr}_2000")
+model = SAC("MultiInputPolicy", env, learning_rate=lr, verbose=1)
+#learn the model
+model.learn(total_timesteps=200000, log_interval=10)
+#save learnt model
+model.save(f"./models/SAC_trained_nav2_{lr}_4000")
 
 # #get training results and save to csv
 df = load_results(log_dir)
 # print(f"There are {len(df)} results")
-df.to_csv(f"./results/SAC_training_results_18_09_lr_{lr}_epLen_{2000}.csv", index=False)
+df.to_csv(f"./results/SAC_training_results_29_09_lr_{lr}_epLen_{4000}.csv", index=False)
 print("Training Results Written")
 
 #plot training results
 results_plotter.plot_results([log_dir], 1e5, results_plotter.X_TIMESTEPS, "SAC Results")
-plot_results(log_dir, f"Learning Curve, lr={lr} and episode length = {2000}")
+plot_results(log_dir, f"Learning Curve, lr={lr} and episode length = {4000}")
 
 
 
