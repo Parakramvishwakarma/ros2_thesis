@@ -33,7 +33,7 @@ parent = os.path.dirname(path)
 log_dir = "/tmp/gym/"
 path = os.path.join(parent, log_dir)
 # print("path", path)
-os.makedirs(path, exist_ok=True)
+# os.makedirs(path, exist_ok=True)
 
 lr = 0.0001
 
