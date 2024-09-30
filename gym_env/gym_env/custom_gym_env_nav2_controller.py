@@ -179,7 +179,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.pathArrayConverted = []
         self.obstacleAngle = None
 
-        self.closestPathPointIndex  = None
+        self.closestPathPointIndex  = 0
         self.closestPathDistance = None
 
         #this is the param for how many poses ahead the path we look to find the path angle
@@ -219,9 +219,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
             'target_pose' : spaces.Box(low=-100.0, high=100.0, shape=(2,), dtype=np.float32),     
             'global_path': spaces.Box(low=-50.0, high=50.0, shape=(100,2), dtype=np.float32),
         })
-        # Store the current velocities for the next step (to calculate change)
-        self.angularVelocityCounter = 0
-        self.lastAngVelocity = None
+       
 
     def _initialise(self):
 
@@ -249,12 +247,8 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.pathArray = None
         self.mapArray = None
         self.mapUpdateData = None
-        self.closestPathPointIndex  = None
+        self.closestPathPointIndex  = 0
         self.closestPathDistance = None
-                # Store the current velocities for the next step (to calculate change)
-
-        self.lastAngVelocity = None
-        self.angularVelocityCounter = 0
 
 
     def step(self, action):
@@ -264,18 +258,10 @@ class CustomGymnasiumEnvNav2(gym.Env):
         angular_vel = action[1] * 3.14 
         self.publishNode.sendAction(linear_vel, angular_vel) #send action from the model
 
-        # if self.lastAngVelocity == None:
-        #     self.lastAngVelocity = round(angular_vel, 3)
-        # else:   
-        #     if self.lastAngVelocity == round(angular_vel, 3):
-        #         self.angularVelocityCounter += 1
-        #         self.subscribeNode.get_logger().info(f"repetitive omega #:{self.angularVelocityCounter}")
-        #     else:
-        #         self.lastAngVelocity = round(angular_vel, 3)        
-
         rclpy.spin_once(self.publishNode, timeout_sec=1.0)
         # Wait for new scan and pose data
         rclpy.spin_once(self.subscribeNode, timeout_sec=1.0)
+        # time.sleep(5)
 
         self.scan_data = self.subscribeNode.scan_data
         self.speed_twist = self.subscribeNode.speed_data
@@ -290,13 +276,11 @@ class CustomGymnasiumEnvNav2(gym.Env):
             #find the pose of the target in the global frame
             self._findRelativeGoal()
 
-            #this will take the path array that is given and convert the poses in the array into an array of x,y coordinates
-            self._convertPathArray()
-
+         
             #process all the Lidar observations and update lidar array of historical observations
             self.closestObstacle = min(self.scan_data.ranges)  #find the closest obstacle
-            self.obstacleAngle = self.scan_data.ranges.index(self.closestObstacle) * 0.5625
-
+            self.obstacleAngle = round(self.scan_data.ranges.index(self.closestObstacle) * 0.5625,3)
+            self.closestObstacle = round(self.closestObstacle, 3)
             self._roundLidar()
             self._updateLidar()
 
@@ -304,6 +288,10 @@ class CustomGymnasiumEnvNav2(gym.Env):
             self.newDistanceToTarget = self._getDistance()
 
             self._find_closest_path_point_and_distance() #this will update the class variables for closets point index and distance
+
+            #this will take the path array that is given and convert the poses in the array into an array of x,y coordinates
+            self._convertPathArray()
+
             self.pathAngle = self._findPathAngle()
             if self.lastDistanceToTarget:
                 self.changeInDistanceToTarget = self.newDistanceToTarget - self.lastDistanceToTarget
@@ -446,9 +434,10 @@ class CustomGymnasiumEnvNav2(gym.Env):
 
     def _convertPathArray(self):
         self.pathArrayConverted = np.zeros((100, 2), dtype=np.float32)  
-        path_length = min(len(self.pathArray), 100) 
-        for i in range(path_length):
-            self.pathArrayConverted[i] = [self.pathArray[i].pose.position.x, self.pathArray[i].pose.position.y]
+        #the path is pruned such that the 100 coordinates infront of the closest point are passed the onees behind are old news
+        path_length = min(len(self.pathArray), 100 + self.closestPathPointIndex) 
+        for i in range(self.closestPathPointIndex, path_length):
+            self.pathArrayConverted[i - self.closestPathPointIndex] = [self.pathArray[i].pose.position.x, self.pathArray[i].pose.position.y]
         
 
     def _calculateReward(self):
@@ -470,9 +459,9 @@ class CustomGymnasiumEnvNav2(gym.Env):
 
         if self.lastDistanceToTarget is not None:
             progress = (self.lastDistanceToTarget - self.newDistanceToTarget)
-            if progress > 0:
+            # if progress > 0:
                 # Progress as a percentage
-                reward += beta * progress  
+            reward += beta * progress  
 
         # Heading alignment reward (0 when aligned, pi when opposite)
         heading_reward = self.pathAngle
@@ -528,7 +517,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.scan_data.ranges = processed_ranges.tolist()
 
     def _getDistance(self):
-        return (self.relativeGoal[0]**2 + self.relativeGoal[1]**2)**0.5
+        return round((self.relativeGoal[0]**2 + self.relativeGoal[1]**2)**0.5,3)
 
     def _calculate_heading_angle(self,current_pose, goal_pose):
         # Extract x and y positions
