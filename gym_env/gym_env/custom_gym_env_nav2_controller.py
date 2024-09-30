@@ -260,8 +260,8 @@ class CustomGymnasiumEnvNav2(gym.Env):
 
         rclpy.spin_once(self.publishNode, timeout_sec=1.0)
         # Wait for new scan and pose data
+        time.sleep(0.5)
         rclpy.spin_once(self.subscribeNode, timeout_sec=1.0)
-        # time.sleep(5)
 
         self.scan_data = self.subscribeNode.scan_data
         self.speed_twist = self.subscribeNode.speed_data
