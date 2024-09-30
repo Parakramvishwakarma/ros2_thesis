@@ -50,7 +50,6 @@ class Subscriber(Node):
             '/amcl_pose',
             self.pose_callback,
             qos_profile)
-    
 
         self.scan_data = None
         self.speed_data = None
@@ -75,17 +74,7 @@ class Subscriber(Node):
     def map_callback(self, msg):
         #This is the array of occupancy grid we are not currently sure waht the obejctive of the origin is        
         self.og_cost_map_grid = msg
-
-    # def map_update_callback(self, msg):
-    #     self.map_update = msg
-    
-    # def map_localcallback(self, msg):
-    #     self.loc_cost_map_grid_cost_map_grid = msg
-
-    # def map_localupdate_callback(self, msg):
-    #     self.map_local_update = msg
-    
-    
+  
     def pose_callback(self, msg):
         self.pose_data = msg.pose.pose
    
@@ -158,11 +147,6 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.counter = 0
         self.episode_length = 4000
         #inititalise variables
-
-        
-        self.plot_interval = 4000  # Interval for plotting
-
-        #these are all the intermediary variables used to create the state and the reward for the agent
         self.angularVelocityCounter = 0
         self.lastAngVelocity = None
         self.pathAngle = None
@@ -178,7 +162,6 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.collision = False
         self.pathArrayConverted = []
         self.obstacleAngle = None
-
         self.closestPathPointIndex  = None
         self.closestPathDistance = None
 
@@ -214,7 +197,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
             'linear_velocity': spaces.Box(low=0, high=5, shape=(1,), dtype=np.float32),
             'angular_velocity': spaces.Box(low=0, high=3.14, shape=(1,), dtype=np.float32),
             'heading_error': spaces.Box(low=0, high=3.14, shape=(1,), dtype=np.float32),
-            'relative_goal': spaces.Box(low=-100.0, high=100.0, shape=(2,), dtype=np.float32),
+            'relative_goal': spaces.Box(low=0, high=100.0, shape=(1,), dtype=np.float32),
             'current_pose': spaces.Box(low=-100.0, high=100.0, shape=(2,), dtype=np.float32), 
             'target_pose' : spaces.Box(low=-100.0, high=100.0, shape=(2,), dtype=np.float32),     
             'global_path': spaces.Box(low=-50.0, high=50.0, shape=(100,2), dtype=np.float32),
@@ -247,31 +230,17 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.speed_twist = None
         self.currentPose = None
         self.pathArray = None
-        self.mapArray = None
-        self.mapUpdateData = None
+
+        #variables for improved PurePursuit Algorithm
         self.closestPathPointIndex  = None
         self.closestPathDistance = None
-                # Store the current velocities for the next step (to calculate change)
-
-        self.lastAngVelocity = None
-        self.angularVelocityCounter = 0
-
 
     def step(self, action):
         #the function includes a step counter to keep track of terminal //..condition
         self.counter += 1
         linear_vel = action[0] * 5.0  
         angular_vel = action[1] * 3.14 
-        self.publishNode.sendAction(linear_vel, angular_vel) #send action from the model
-
-        # if self.lastAngVelocity == None:
-        #     self.lastAngVelocity = round(angular_vel, 3)
-        # else:   
-        #     if self.lastAngVelocity == round(angular_vel, 3):
-        #         self.angularVelocityCounter += 1
-        #         self.subscribeNode.get_logger().info(f"repetitive omega #:{self.angularVelocityCounter}")
-        #     else:
-        #         self.lastAngVelocity = round(angular_vel, 3)        
+        self.publishNode.sendAction(linear_vel, angular_vel) #send action from the model  
 
         rclpy.spin_once(self.publishNode, timeout_sec=1.0)
         # Wait for new scan and pose data
@@ -321,7 +290,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
                 'linear_velocity': self.linearVelocity,
                 'angular_velocity': self.angularVelocity,
                 'heading_error': self.pathAngle,
-                'relative_goal': self.relativeGoal,
+                'relative_goal': self.newDistanceToTarget,
                 'current_pose': [self.currentPose.position.x, self.currentPose.position.y],  
                 'target_pose': [self.target_pose.position.x, self.target_pose.position.y] ,      
                 'global_path': self.pathArrayConverted,
@@ -453,10 +422,10 @@ class CustomGymnasiumEnvNav2(gym.Env):
 
     def _calculateReward(self):
         # Coefficients for each reward component
-        alpha = -0.5  # Penalty for deviation from the path (heading error)
-        beta = 5.0    # Reward for reducing distance to the goal
-        gamma = -2 # Penalty for proximity to obstacles
-        roh = 0.7    # Reward for maintaining linear speed
+        alpha = -0.5  # Penalty for heading error
+        beta = 2    # Reward for reducing distance to the goal
+        gamma = -5 # Penalty for proximity to obstacles
+        roh = 2   # Reward for maintaining linear speed
         mu = -0.3     # Penalty for high angular velocity
         delta = -0.8  # Path deviation penalty
         goal_reached_bonus = 2000  # Large bonus for reaching the goal
@@ -465,31 +434,46 @@ class CustomGymnasiumEnvNav2(gym.Env):
         # Base reward
         reward = 0
 
-        # normalized_linear_velocity = self.linearVelocity / 5.0  # Normalized to range [-1, 1]
-        # normalized_angular_velocity = self.angularVelocity / 3.14  # Normalized to range [-1, 1]
+        normalized_linear_velocity = self.linearVelocity / 5.0  # Normalized to range [-1, 1]
+        normalized_angular_velocity = self.angularVelocity / 3.14  # Normalized to range [-1, 1]
 
         if self.lastDistanceToTarget is not None:
             progress = (self.lastDistanceToTarget - self.newDistanceToTarget)
             if progress > 0:
-                # Progress as a percentage
-                reward += beta * progress  
+                reward += beta
+            else:
+                reward -= beta
 
+        if self.newDistanceToTarget < 1.5:
+            reward += 4
+        if self.newDistanceToTarget < 3:
+            reward += 2                
+        if self.newDistanceToTarget < 5:
+            reward += 0.5
+        
         # Heading alignment reward (0 when aligned, pi when opposite)
         heading_reward = self.pathAngle
         reward += alpha * heading_reward
 
         # Penalty for being too close to obstacles
-        if self.closestObstacle < 1.25:
-            obstacle_penalty = (1 / self.closestObstacle)  # Higher penalty the closer the obstacle
-            reward += gamma * obstacle_penalty
+        if self.closestObstacle < 1.0:
+            reward += gamma
 
         # Reward for maintaining a reasonable linear velocity
-        reward += roh * self.linearVelocity
+        reward += roh * normalized_linear_velocity
 
         # Penalty for excessive angular velocity
-        reward += mu * abs(self.angularVelocity)
+        reward += mu * abs(normalized_angular_velocity)
 
-        reward += delta * self.closestPathDistance  # Penalize deviations
+        # Penalize deviations
+        if self.closestPathDistance > 5:
+            reward += -3
+        elif self.closestPathDistance > 3:
+            reward += -2
+        elif self.closestPathDistance > 1:
+            reward += -1
+        
+
    
         # Check for terminal conditions and apply appropriate rewards/penalties
         if self.newDistanceToTarget < 0.5:  # Goal reached
