@@ -392,7 +392,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
                 'linear_velocity': self.linearVelocity,
                 'angular_velocity': self.angularVelocity,
                 'heading_error': self.pathAngle,
-                'relative_goal': self.relativeGoal,
+                'relative_goal': self.newDistanceToTarget,
                 'current_pose': [self.currentPose.position.x, self.currentPose.position.y],  
                 'target_pose': [self.target_pose.position.x, self.target_pose.position.y] ,      
                 'global_path': self.pathArrayConverted,
@@ -472,8 +472,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
             reward += -2
         elif self.closestPathDistance > 1:
             reward += -1
-        
-
+    
    
         # Check for terminal conditions and apply appropriate rewards/penalties
         if self.newDistanceToTarget < 0.5:  # Goal reached
