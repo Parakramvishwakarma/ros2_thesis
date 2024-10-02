@@ -221,7 +221,6 @@ class CustomGymnasiumEnvNav2(gym.Env):
        
 
     def _initialise(self):
-
         self.relativeGoal = None
         self.angularVelocityCounter = 0
         self.pathArrayConverted = []
@@ -243,8 +242,6 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.speed_twist = None
         self.currentPose = None
         self.pathArray = None
-        self.mapArray = None
-        self.mapUpdateData = None
         self.closestPathPointIndex  = 0
         self.closestPathDistance = None
 
