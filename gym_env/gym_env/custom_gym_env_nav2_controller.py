@@ -51,7 +51,6 @@ class Subscriber(Node):
             self.pose_callback,
             qos_profile)
 
-
         self.scan_data = None
         self.speed_data = None
         self.path_data = None
@@ -139,10 +138,6 @@ class CustomGymnasiumEnvNav2(gym.Env):
         rclpy.init()
         self.counter = 0
         self.episode_length = 4000
-        #inititalise variables
-
-
-        self.plot_interval = 4000  # Interval for plotting
 
         #these are all the intermediary variables used to create the state and the reward for the agent
         self.lastDistanceToTarget = None
@@ -195,7 +190,6 @@ class CustomGymnasiumEnvNav2(gym.Env):
 
 
     def _initialise(self):
-
         self.closestPathPointIndex  = 0
         self.closestPathDistance = None
         self.lookAheadPointIndex = 0
@@ -227,7 +221,6 @@ class CustomGymnasiumEnvNav2(gym.Env):
 
         rclpy.spin_once(self.publishNode, timeout_sec=1.0)
         # Wait for new scan and pose data
-        time.sleep(0.5)
         rclpy.spin_once(self.subscribeNode, timeout_sec=1.0)
 
         self.scan_data = self.subscribeNode.scan_data
