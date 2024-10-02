@@ -221,6 +221,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
 
         rclpy.spin_once(self.publishNode, timeout_sec=1.0)
         # Wait for new scan and pose data
+        time.sleep(5)
         rclpy.spin_once(self.subscribeNode, timeout_sec=1.0)
 
         self.scan_data = self.subscribeNode.scan_data
@@ -232,10 +233,9 @@ class CustomGymnasiumEnvNav2(gym.Env):
         if ( self.scan_data and self.speed_twist and self.currentPose and self.pathArray):
             if self.counter ==1:
                 self.subscribeNode.get_logger().info("Running New Episode")
-
             self.lastDistanceToTarget = self.newDistanceToTarget
-            self.newDistanceToTarget = self._getDistance()
             if self.lastDistanceToTarget:
+                self.newDistanceToTarget = self._getDistance()
                 self.changeInDistanceToTarget = self.newDistanceToTarget - self.lastDistanceToTarget
 
             #we will go an update the points now for the new iteration
@@ -356,6 +356,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
             self.closestPathPointIndex = 0
             self.lookAheadPointIndex = self.lookAheadDist
             self.lookAheadPoint = self.pathArray[self.lookAheadDist].pose
+            self.subscribeNode.get_logger().info(f"{self.lookAheadPoint.position.x}")
             #process the lidar
             self._roundLidar()
             self._updateLidar()
@@ -369,7 +370,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
                 'linear_velocity': self.linearVelocity,
                 'relative_goal': self.newDistanceToTarget,
                 'current_pose': [self.currentPose.position.x, self.currentPose.position.y],
-                'target_pose': [self.lookAheadPointIndex.position.x, self.lookAheadPointIndex.position.y] ,
+                'target_pose': [self.lookAheadPoint.position.x, self.lookAheadPoint.position.y] ,
                 'global_path': self.prunedPath,
             }
         else:
@@ -410,7 +411,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
             obstacle_penalty = (1 / self.closestObstacle)  # Higher penalty the closer the obstacle
             reward += gamma * obstacle_penalty
 
-        reward += roh * self.linearVelocit
+        reward += roh * self.linearVelocity
 
         if self.newDistanceToTarget < 0.5:  # Goal reached
             reward += goal_reached_bonus
