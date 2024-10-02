@@ -166,7 +166,6 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.angularVelocityCounter = 0
         self.lastAngVelocity = None
         self.pathAngle = None
-        self.goalAngle = None
         self.lastDistanceToTarget = None
         self.newDistanceToTarget = None
         self.changeInDistanceToTarget = 0
@@ -229,7 +228,6 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.collision = False
         self.lastAngVelocity = None
         self.pathAngle = None
-        self.goalAngle = None
         self.lastDistanceToTarget = None
         self.newDistanceToTarget = None
         self.changeInDistanceToTarget = 0
