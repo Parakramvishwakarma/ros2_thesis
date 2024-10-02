@@ -35,7 +35,7 @@ path = os.path.join(parent, log_dir)
 # print("path", path)
 os.makedirs(path, exist_ok=True)
 
-lr = 0.0001
+lr = 0.00001
 
 env = CustomGymnasiumEnvNav2()
 
@@ -46,7 +46,7 @@ print(model.policy)
 #learn the model
 model.learn(total_timesteps=200000, log_interval=10)
 #save learnt model
-model.save(f"./models/SAC_trained_nav2_{lr}_4000_bigger_reward")
+model.save(f"./models/SAC_trained_nav2_{lr}_4000")
 
 model.save_replay_buffer(f"./replay/sac_replay_buffer_{lr}")
 
@@ -56,7 +56,7 @@ policy.save(f"./policy/sac_{lr}_policy_lookahead")
 # #get training results and save to csv
 df = load_results(log_dir)
 # print(f"There are {len(df)} results")
-df.to_csv(f"./results/SAC_training_results_02_10_lr_{lr}_epLen_{4000}_bigger_reward.csv", index=False)
+df.to_csv(f"./results/SAC_training_results_02_10_lr_{lr}_epLen_{4000}.csv", index=False)
 print("Training Results Written")
 
 #plot training results
