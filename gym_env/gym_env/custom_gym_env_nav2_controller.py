@@ -257,6 +257,8 @@ class CustomGymnasiumEnvNav2(gym.Env):
 
             self.linearVelocity= round(self.speed_twist.linear.x, 2)
             self.angularVelocity = round(self.speed_twist.angular.z,2)
+            self.subscribeNode.get_logger().info(f"delta V: {self.linearVelocity - linear_vel}, delta w: {self.angularVelocity - angular_vel}")
+
 
             #this is us updating the reward class variable with
             self._calculateReward()
