@@ -275,8 +275,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
             
             #find the pose of the target in the global frame
             self._findRelativeGoal()
-
-         
+            
             #process all the Lidar observations and update lidar array of historical observations
             self.closestObstacle = min(self.scan_data.ranges)  #find the closest obstacle
             self.obstacleAngle = round(self.scan_data.ranges.index(self.closestObstacle) * 0.5625,3)
