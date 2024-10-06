@@ -409,7 +409,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
 
     def _convertPathArray(self):
         self.pathArrayConverted = np.zeros((self.lookAheadDist, 2), dtype=np.float32)
-        for i in range(self.closestPathPointIndex, self.lookAheadPointIndex+1):
+        for i in range(self.closestPathPointIndex, self.lookAheadPointIndex):
             self.pathArrayConverted[i - self.closestPathPointIndex] = [self.pathArray[i].pose.position.x, self.pathArray[i].pose.position.y]
     
 
