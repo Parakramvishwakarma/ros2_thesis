@@ -44,11 +44,11 @@ env = Monitor(env, log_dir)
 model = SAC("MultiInputPolicy", env, learning_rate=lr, verbose=1)
 print(model.policy)
 #learn the model
-model.learn(total_timesteps=600000, log_interval=10)
+model.learn(total_timesteps=10, log_interval=10)
 #save learnt model
 model.save(f"./models/SAC_trained_nav2_{lr}_Please")
 
-# model.save_replay_buffer(f"./replay/sac_replay_buffer_{lr}")
+model.save_replay_buffer(f"./replay/sac_replay_buffer_{lr}")
 
 policy = model.policy
 policy.save(f"./policy/sac_{lr}")

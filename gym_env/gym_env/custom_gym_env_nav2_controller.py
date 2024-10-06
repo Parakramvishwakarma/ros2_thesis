@@ -76,16 +76,6 @@ class Subscriber(Node):
         #This is the array of occupancy grid we are not currently sure waht the obejctive of the origin is        
         self.og_cost_map_grid = msg
 
-    # def map_update_callback(self, msg):
-    #     self.map_update = msg
-    
-    # def map_localcallback(self, msg):
-    #     self.loc_cost_map_grid_cost_map_grid = msg
-
-    # def map_localupdate_callback(self, msg):
-    #     self.map_local_update = msg
-    
-    
     def pose_callback(self, msg):
         self.pose_data = msg.pose.pose
    
@@ -159,12 +149,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.episode_length = 4000
         #inititalise variables
 
-        
-        self.plot_interval = 4000  # Interval for plotting
-
         #these are all the intermediary variables used to create the state and the reward for the agent
-        self.angularVelocityCounter = 0
-        self.lastAngVelocity = None
         self.pathAngle = None
         self.lastDistanceToTarget = None
         self.newDistanceToTarget = None
@@ -201,10 +186,9 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.speed_twist = None
         self.currentPose = None
         self.pathArray = None
-        self.mapArray = None
-        self.mapUpdateData = None
-        self.localMapArray = None
-        self.localMapUpdateData = None
+
+        self.lookAheadPointIndex = self.lookAheadDist
+        self.lookAheadPoint = None
 
         # Define action and observation space
         self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(2,), dtype=np.float32)
@@ -213,19 +197,19 @@ class CustomGymnasiumEnvNav2(gym.Env):
             'linear_velocity': spaces.Box(low=0, high=5, shape=(1,), dtype=np.float32),
             'angular_velocity': spaces.Box(low=0, high=3.14, shape=(1,), dtype=np.float32),
             'heading_error': spaces.Box(low=0, high=3.14, shape=(1,), dtype=np.float32),
+            'path_deviation': spaces.Box(low=0, high=3.14, shape=(1,), dtype=np.float32),
             'relative_goal': spaces.Box(low=-100.0, high=100.0, shape=(2,), dtype=np.float32),
             'current_pose': spaces.Box(low=-100.0, high=100.0, shape=(2,), dtype=np.float32), 
             'target_pose' : spaces.Box(low=-100.0, high=100.0, shape=(2,), dtype=np.float32),     
-            'global_path': spaces.Box(low=-50.0, high=50.0, shape=(100,2), dtype=np.float32),
+            'global_path': spaces.Box(low=-50.0, high=50.0, shape=(self.lookAheadDist,2), dtype=np.float32),
         })
        
 
     def _initialise(self):
-        self.relativeGoal = None
-        self.angularVelocityCounter = 0
+        self.lookAheadPointIndex = self.lookAheadDist
+        self.lookAheadPoint = None
         self.pathArrayConverted = []
         self.collision = False
-        self.lastAngVelocity = None
         self.pathAngle = None
         self.lastDistanceToTarget = None
         self.newDistanceToTarget = None
@@ -279,22 +263,20 @@ class CustomGymnasiumEnvNav2(gym.Env):
 
             self.lastDistanceToTarget = self.newDistanceToTarget
             self.newDistanceToTarget = self._getDistance()
+            if self.lastDistanceToTarget:
+                self.changeInDistanceToTarget = self.newDistanceToTarget - self.lastDistanceToTarget
 
             self._find_closest_path_point_and_distance() #this will update the class variables for closets point index and distance
+            self.pathAngle = self._findPathAngle()
 
             #this will take the path array that is given and convert the poses in the array into an array of x,y coordinates
             self._convertPathArray()
 
-            self.pathAngle = self._findPathAngle()
-            if self.lastDistanceToTarget:
-                self.changeInDistanceToTarget = self.newDistanceToTarget - self.lastDistanceToTarget
             self.linearVelocity= round(self.speed_twist.linear.x, 2) 
             self.angularVelocity = round(self.speed_twist.angular.z,2)
-
             #this is us updating the reward class variable with 
             self._calculateReward()
-
-            #this will check the terminal conditions and if its terminated update self.reward accordingly
+            #this will check te terminal conditions and if its terminated update self.reward accordingly
             terminated = self._checkTerminalConditions()
 
             observation = {
@@ -302,9 +284,10 @@ class CustomGymnasiumEnvNav2(gym.Env):
                 'linear_velocity': self.linearVelocity,
                 'angular_velocity': self.angularVelocity,
                 'heading_error': self.pathAngle,
-                'relative_goal': self.relativeGoal,
+                'path_deviation': self.closestPathDistance,
+                'relative_goal': self.newDistanceToTarget,
                 'current_pose': [self.currentPose.position.x, self.currentPose.position.y],  
-                'target_pose': [self.target_pose.position.x, self.target_pose.position.y] ,      
+                'target_pose': [self.target_pose.position.x, self.target_pose.position.y] ,    
                 'global_path': self.pathArrayConverted,
             }
 
@@ -386,17 +369,15 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.currentPose  = self.subscribeNode.pose_data
 
         #get udpated observations from odometry
-        if ( self.scan_data and self.speed_twist and self.currentPose and self.pathArray):
+        if (self.scan_data and self.speed_twist and self.currentPose and self.pathArray):
             self._findRelativeGoal()
             self._roundLidar()
             self._updateLidar()
             self.newDistanceToTarget = self._getDistance()
             self.linearVelocity= round(self.speed_twist.linear.x, 2) 
             self.angularVelocity = round(self.speed_twist.angular.z,2)
-            if len(self.pathArray) > self.lookAheadDist:
-                self.pathAngle = self._calculate_heading_angle(self.currentPose, self.pathArray[self.lookAheadDist].pose)
-            else:
-                self.pathAngle = self._calculate_heading_angle(self.currentPose, self.pathArray[-1].pose)
+            idx = min(self.lookAheadPointIndex, len(self.pathAngle) -1)
+            self.pathAngle = self._calculate_heading_angle(self.currentPose, self.pathArray[idx].pose)
             self._convertPathArray()
             self.subscribeNode.get_logger().info(f"{self.linearVelocity} ,{self.angularVelocity} {self.pathAngle}, {self.relativeGoal}")
             observation = {
@@ -404,7 +385,8 @@ class CustomGymnasiumEnvNav2(gym.Env):
                 'linear_velocity': self.linearVelocity,
                 'angular_velocity': self.angularVelocity,
                 'heading_error': self.pathAngle,
-                'relative_goal': self.relativeGoal,
+                'path_deviation': 0,
+                'relative_goal': self.newDistanceToTarget,
                 'current_pose': [self.currentPose.position.x, self.currentPose.position.y],  
                 'target_pose': [self.target_pose.position.x, self.target_pose.position.y] ,      
                 'global_path': self.pathArrayConverted,
@@ -426,12 +408,10 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.target_pose.position.y = float(np.random.randint(-9, 9))
 
     def _convertPathArray(self):
-        self.pathArrayConverted = np.zeros((100, 2), dtype=np.float32)  
-        #the path is pruned such that the 100 coordinates infront of the closest point are passed the onees behind are old news
-        path_length = min(len(self.pathArray), 100 + self.closestPathPointIndex) 
-        for i in range(self.closestPathPointIndex, path_length):
+        self.pathArrayConverted = np.zeros((self.lookAheadDist, 2), dtype=np.float32)
+        for i in range(self.closestPathPointIndex, self.lookAheadPointIndex+1):
             self.pathArrayConverted[i - self.closestPathPointIndex] = [self.pathArray[i].pose.position.x, self.pathArray[i].pose.position.y]
-        
+    
 
     def _calculateReward(self):
         # Coefficients for each reward component
@@ -529,7 +509,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
         heading_angle = desired_heading - current_yaw
 
         # Normalize the heading angle to the range [-pi, pi]
-        heading_angle = abs((heading_angle + m.pi) % (2 * m.pi) - m.pi)
+        heading_angle = round(abs((heading_angle + m.pi) % (2 * m.pi) - m.pi),2)
 
         return heading_angle
     
@@ -597,13 +577,13 @@ class CustomGymnasiumEnvNav2(gym.Env):
                 min_distance = distance
                 closest_point_index = i
 
-        self.closestPathDistance = min_distance
+        self.closestPathDistance = round(min_distance,2)
         self.closestPathPointIndex =  closest_point_index
 
     def _findPathAngle(self):
-        lookaheadPointIndex = min(self.closestPathPointIndex + 40, len(self.pathArray) - 1)
-        lookAhead = self.pathArray[lookaheadPointIndex].pose
-        return self._calculate_heading_angle(self.currentPose, lookAhead)
+        self.lookAheadPointIndex = min(self.closestPathPointIndex + self.lookAheadDist, len(self.pathArray) - 1)
+        self.lookAheadPoint = self.pathArray[self.lookAheadPointIndex].pose
+        return self._calculate_heading_angle(self.currentPose, self.lookAheadPoint)
 
 
 
