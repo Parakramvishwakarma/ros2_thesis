@@ -453,8 +453,6 @@ class CustomGymnasiumEnvNav2(gym.Env):
 
         if self.lastDistanceToTarget is not None:
             progress = (self.lastDistanceToTarget - self.newDistanceToTarget)
-            # if progress > 0:
-                # Progress as a percentage
             reward += beta * progress  
 
         # Heading alignment reward (0 when aligned, pi when opposite)
