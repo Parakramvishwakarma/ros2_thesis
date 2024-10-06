@@ -255,7 +255,6 @@ class CustomGymnasiumEnvNav2(gym.Env):
 
         rclpy.spin_once(self.publishNode, timeout_sec=1.0)
         # Wait for new scan and pose data
-        time.sleep(0.5)
         rclpy.spin_once(self.subscribeNode, timeout_sec=1.0)
 
         self.scan_data = self.subscribeNode.scan_data
@@ -436,14 +435,13 @@ class CustomGymnasiumEnvNav2(gym.Env):
 
     def _calculateReward(self):
         # Coefficients for each reward component
-        alpha = -0.5  # Penalty for deviation from the path (heading error)
+        alpha = -0.5  # Penalty for heading error
         beta = 5.0    # Reward for reducing distance to the goal
         gamma = -2 # Penalty for proximity to obstacles
         roh = 0.7    # Reward for maintaining linear speed
-        mu = -0.3     # Penalty for high angular velocity
         delta = -0.8  # Path deviation penalty
         goal_reached_bonus = 2000  # Large bonus for reaching the goal
-        collision_penalty = -1000  # High penalty for collisions
+        collision_penalty = -1500  # High penalty for collisions
 
         # Base reward
         reward = 0
@@ -466,9 +464,6 @@ class CustomGymnasiumEnvNav2(gym.Env):
 
         # Reward for maintaining a reasonable linear velocity
         reward += roh * self.linearVelocity
-
-        # Penalty for excessive angular velocity
-        reward += mu * abs(self.angularVelocity)
 
         reward += delta * self.closestPathDistance  # Penalize deviations
    

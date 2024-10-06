@@ -23,7 +23,7 @@ def plot_results(log_folder, title="Learning Curve"):
     plt.xlabel("Number of Timesteps")
     plt.ylabel("Rewards")
     plt.title(title)
-    plt.savefig('./graphs/SAC_results_bigger_reward.png')
+    plt.savefig('./graphs/SAC_results_PLEASE.png')
     print("Graph Saved")
     plt.show()
 
@@ -35,7 +35,7 @@ path = os.path.join(parent, log_dir)
 # print("path", path)
 os.makedirs(path, exist_ok=True)
 
-lr = 0.0003
+lr = 0.00001
 
 env = CustomGymnasiumEnvNav2()
 
@@ -44,11 +44,11 @@ env = Monitor(env, log_dir)
 model = SAC("MultiInputPolicy", env, learning_rate=lr, verbose=1)
 print(model.policy)
 #learn the model
-model.learn(total_timesteps=200000, log_interval=10)
+model.learn(total_timesteps=600000, log_interval=10)
 #save learnt model
 model.save(f"./models/SAC_trained_nav2_{lr}_Please")
 
-model.save_replay_buffer(f"./replay/sac_replay_buffer_{lr}")
+# model.save_replay_buffer(f"./replay/sac_replay_buffer_{lr}")
 
 policy = model.policy
 policy.save(f"./policy/sac_{lr}")
@@ -56,7 +56,7 @@ policy.save(f"./policy/sac_{lr}")
 # #get training results and save to csv
 df = load_results(log_dir)
 # print(f"There are {len(df)} results")
-df.to_csv(f"./results/SAC_training_results_02_10_lr_{lr}_epLen_{4000}_please.csv", index=False)
+df.to_csv(f"./results/SAC_training_results_06_10_lr_{lr}_epLen_{4000}_please.csv", index=False)
 print("Training Results Written")
 
 #plot training results
