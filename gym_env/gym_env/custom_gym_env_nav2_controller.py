@@ -206,7 +206,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
        
 
     def _initialise(self):
-        self.lookAheadPointIndex = self.lookAheadDist
+        self.lookAheadPointIndex = 0
         self.lookAheadPoint = None
         self.pathArrayConverted = []
         self.collision = False
@@ -376,8 +376,8 @@ class CustomGymnasiumEnvNav2(gym.Env):
             self.newDistanceToTarget = self._getDistance()
             self.linearVelocity= round(self.speed_twist.linear.x, 2) 
             self.angularVelocity = round(self.speed_twist.angular.z,2)
-            idx = min(self.lookAheadPointIndex, len(self.pathAngle) -1)
-            self.pathAngle = self._calculate_heading_angle(self.currentPose, self.pathArray[idx].pose)
+            self.lookAheadPointIndex = min(len(self.pathArray) -1, self.lookAheadDist)
+            self.pathAngle = self._calculate_heading_angle(self.currentPose, self.pathArray[self.lookAheadPointIndex].pose)
             self._convertPathArray()
             self.subscribeNode.get_logger().info(f"{self.linearVelocity} ,{self.angularVelocity} {self.pathAngle}, {self.relativeGoal}")
             observation = {
