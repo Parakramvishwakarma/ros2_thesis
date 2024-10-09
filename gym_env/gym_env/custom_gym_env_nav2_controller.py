@@ -516,6 +516,16 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.closestPathDistance = min_distance
         self.closestPathPointIndex =  closest_point_index
 
+    
+        
+    def _quaternion_to_yaw(self,x, y, z, w):
+        """Convert a quaternion into yaw (rotation around Z-axis)"""
+        # Yaw (Z-axis rotation)
+        siny_cosp = 2.0 * (w * z + x * y)
+        cosy_cosp = 1.0 - 2.0 * (y * y + z * z)
+        return m.atan2(siny_cosp, cosy_cosp)
+
+
     def _calculate_heading_angle(self):
         # Extract x and y positions
         current_x = self.currentPose.position.x
