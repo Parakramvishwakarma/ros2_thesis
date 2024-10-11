@@ -158,7 +158,6 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.reward = 0
         self.linearVelocity = None
         self.angularVelocity = None
-        self.lidarTracking = np.zeros((3, 640), dtype=np.float32)
         self.collision = False
         self.pathArrayConverted = []
         self.obstacleAngle = None
@@ -189,11 +188,15 @@ class CustomGymnasiumEnvNav2(gym.Env):
 
         self.lookAheadPointIndex = self.lookAheadDist
         self.lookAheadPoint = None
+        self.obstacleArray = np.full((3,), -1, dtype=np.float32)
+        self.obstacleAngleArray = np.full((3,), -1, dtype=np.float32)
+
 
         # Define action and observation space
         self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(2,), dtype=np.float32)
         self.observation_space = spaces.Dict({
-            'lidar': spaces.Box(low=0, high=12, shape=(3,640), dtype=np.float32),
+            'closestObstacle': spaces.Box(low=0, high=12, shape=(3,), dtype=np.float32),
+            'obstacleAngle': spaces.Box(low=0, high=12, shape=(3,), dtype=np.float32),
             'linear_velocity': spaces.Box(low=0, high=5, shape=(1,), dtype=np.float32),
             'angular_velocity': spaces.Box(low=0, high=3.14, shape=(1,), dtype=np.float32),
             'heading_error': spaces.Box(low=0, high=3.14, shape=(1,), dtype=np.float32),
@@ -201,11 +204,12 @@ class CustomGymnasiumEnvNav2(gym.Env):
             'relative_goal': spaces.Box(low=-100.0, high=100.0, shape=(2,), dtype=np.float32),
             'current_pose': spaces.Box(low=-100.0, high=100.0, shape=(2,), dtype=np.float32), 
             'target_pose' : spaces.Box(low=-100.0, high=100.0, shape=(2,), dtype=np.float32),     
-            'global_path': spaces.Box(low=-50.0, high=50.0, shape=(self.lookAheadDist,2), dtype=np.float32),
+            'lookAheadPoint': spaces.Box(low=-50.0, high=50.0, shape=(2,), dtype=np.float32),
         })
        
-
     def _initialise(self):
+        self.obstacleArray = np.full((3,), -1, dtype=np.float32)
+        self.obstacleAngleArray = np.full((3,), -1, dtype=np.float32)
         self.lookAheadPointIndex = 0
         self.lookAheadPoint = None
         self.pathArrayConverted = []
@@ -218,7 +222,6 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.reward = 0
         self.linearVelocity = None
         self.angularVelocity = None
-        self.lidarTracking = np.zeros((3, 640), dtype=np.float32)
         self.counter = 0
         self.obstacleAngle = None
         #these are data hodling variables
@@ -251,16 +254,10 @@ class CustomGymnasiumEnvNav2(gym.Env):
         if ( self.scan_data and self.speed_twist and self.currentPose and self.pathArray):
             if self.counter ==1:
                 self.subscribeNode.get_logger().info("Running New Episode")
-            
             #find the pose of the target in the global frame
             self._findRelativeGoal()
-            
-            #process all the Lidar observations and update lidar array of historical observations
-            self.closestObstacle = min(self.scan_data.ranges)  #find the closest obstacle
-            self.obstacleAngle = round(self.scan_data.ranges.index(self.closestObstacle) * 0.5625,3)
-            self.closestObstacle = round(self.closestObstacle, 3)
-            self._roundLidar()
-            self._updateLidar()
+            #process all the Lidar observations and update lidar array of historical observation
+            self._processLidar()
 
             self.lastDistanceToTarget = self.newDistanceToTarget
             self.newDistanceToTarget = self._getDistance()
@@ -271,7 +268,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
             self.pathAngle = self._findPathAngle()
 
             #this will take the path array that is given and convert the poses in the array into an array of x,y coordinates
-            self._convertPathArray()
+            # self._convertPathArray()
 
             self.linearVelocity= round(self.speed_twist.linear.x, 2) 
             self.angularVelocity = round(self.speed_twist.angular.z,2)
@@ -281,15 +278,16 @@ class CustomGymnasiumEnvNav2(gym.Env):
             terminated = self._checkTerminalConditions()
 
             observation = {
-                'lidar': self.lidarTracking,
+                'closestObstacle': self.obstacleArray,
+                'obstacleAngle': self.obstacleAngleArray,
                 'linear_velocity': self.linearVelocity,
                 'angular_velocity': self.angularVelocity,
                 'heading_error': self.pathAngle,
                 'path_deviation': self.closestPathDistance,
-                'relative_goal': self.newDistanceToTarget,
-                'current_pose': [self.currentPose.position.x, self.currentPose.position.y],  
-                'target_pose': [self.target_pose.position.x, self.target_pose.position.y] ,    
-                'global_path': self.pathArrayConverted,
+                'relative_goal': self.relativeGoal,
+                'current_pose': self.currentPose, 
+                'target_pose' : self.target_pose,     
+                'lookAheadPoint': [self.lookAheadPoint.position.x, self.lookAheadPoint.position.y] ,
             }
 
         else:
@@ -370,25 +368,26 @@ class CustomGymnasiumEnvNav2(gym.Env):
         #get udpated observations from odometry
         if (self.scan_data and self.speed_twist and self.currentPose and self.pathArray):
             self._findRelativeGoal()
-            self._roundLidar()
-            self._updateLidar()
+            self._processLidar()
+            self._updateLidarData()
             self.newDistanceToTarget = self._getDistance()
             self.linearVelocity= round(self.speed_twist.linear.x, 2) 
             self.angularVelocity = round(self.speed_twist.angular.z,2)
             self.lookAheadPointIndex = min(len(self.pathArray) -1, self.lookAheadDist)
             self.pathAngle = self._calculate_heading_angle(self.currentPose, self.pathArray[self.lookAheadPointIndex].pose)
-            self._convertPathArray()
+            # self._convertPathArray()
             self.subscribeNode.get_logger().info(f"{self.linearVelocity} ,{self.angularVelocity} {self.pathAngle}, {self.relativeGoal}")
             observation = {
-                'lidar': self.lidarTracking,
+                'closestObstacle': self.obstacleArray,
+                'obstacleAngle': self.obstacleAngleArray,
                 'linear_velocity': self.linearVelocity,
                 'angular_velocity': self.angularVelocity,
                 'heading_error': self.pathAngle,
-                'path_deviation': 0,
-                'relative_goal': self.newDistanceToTarget,
-                'current_pose': [self.currentPose.position.x, self.currentPose.position.y],  
-                'target_pose': [self.target_pose.position.x, self.target_pose.position.y] ,      
-                'global_path': self.pathArrayConverted,
+                'path_deviation': self.closestPathDistance,
+                'relative_goal': self.relativeGoal,
+                'current_pose': self.currentPose, 
+                'target_pose' : self.target_pose,     
+                'lookAheadPoint': [self.pathArray[self.lookAheadPointIndex].pose.position.x, self.pathArray[self.lookAheadPointIndex].pose.position.y],
             }
         else:
             observation = self.observation_space.sample()  # Return a random observation within space
@@ -401,6 +400,14 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.subscribeNode.destroy_node()
         self.publishNode.destroy_node()
         rclpy.shutdown()
+
+    def _processLidar(self):
+        self.closestObstacle = min(self.scan_data.ranges)  #find the closest obstacle
+        self.obstacleAngle = round(self.scan_data.ranges.index(self.closestObstacle) * 0.5625,3)
+        self.closestObstacle = round(self.closestObstacle, 3)
+        self.subscribeNode.get_logger().info(f"Closest Obstacle: {self.closestObstacle}, Angle: {self.obstacleAngle}")
+        self._roundLidar()
+        self._updateLidarData()
 
     def _setNewTargetAndInitial(self):
         self.target_pose.position.x = float(np.random.randint(-4,14))
@@ -524,11 +531,15 @@ class CustomGymnasiumEnvNav2(gym.Env):
         return m.atan2(siny_cosp, cosy_cosp)
 
 
-    def _updateLidar(self):
+    def _updateLidarData(self):
         # self.subscribeNode.get_logger().info(f"Length of rounded lidar {len(lidarObservation)}")
-        self.lidarTracking[2] = self.lidarTracking[1]
-        self.lidarTracking[1] = self.lidarTracking[0]
-        self.lidarTracking[0] = self.scan_data.ranges
+        self.obstacleArray[2] = self.obstacleArray[1]
+        self.obstacleArray[1] = self.obstacleArray[0]
+        self.obstacleArray[0] = self.closestObstacle
+
+        self.obstacleAngleArray[2] = self.obstacleAngleArray[1]
+        self.obstacleAngleArray[1] = self.obstacleAngleArray[0]
+        self.obstacleAngleArray[0] = self.obstacleAngle
 
     
     def _findRelativeGoal(self):

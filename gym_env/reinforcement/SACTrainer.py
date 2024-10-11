@@ -1,4 +1,4 @@
-from gym_env.custom_gym_env import CustomGymnasiumEnv
+from gym_env.custom_gym_env_nav2_controller import CustomGymnasiumEnv
 import numpy as np
 from stable_baselines3 import SAC
 from stable_baselines3.common import results_plotter
@@ -42,19 +42,19 @@ env = Monitor(env, log_dir)
 
 model = SAC("MultiInputPolicy", env, learning_rate=lr, batch_size=512,ent_coef='auto_0.1', verbose=1)
 print(model.policy)
-#learn the model
-# model.learn(total_timesteps=400000, log_interval=50)
-# #save learnt model
-# model.save("./models/SAC_trained_nav2_09")
+# learn the model
+model.learn(total_timesteps=400000, log_interval=50)
+#save learnt model
+model.save("./models/SAC_trained_nav2_11")
 
-# #get training results and save to csv
-# df = load_results(log_dir)
-# # print(f"There are {len(df)} results")
-# df.to_csv(f"./results/SAC_training_results_18_09_lr_{lr}_epLen_{3000}.csv", index=False)
-# print("Training Results Written")
+#get training results and save to csv
+df = load_results(log_dir)
+# print(f"There are {len(df)} results")
+df.to_csv(f"./results/SAC_training_results_18_09_lr_{lr}_epLen_{4000}.csv", index=False)
+print("Training Results Written")
 
-# #plot training results
-# results_plotter.plot_results([log_dir], 1e5, results_plotter.X_TIMESTEPS, "SAC Results")
-# plot_results(log_dir)
+#plot training results
+results_plotter.plot_results([log_dir], 1e5, results_plotter.X_TIMESTEPS, "SAC Results")
+plot_results(log_dir)
 
 

@@ -23,7 +23,7 @@ def plot_results(log_folder, title="Learning Curve"):
     plt.xlabel("Number of Timesteps")
     plt.ylabel("Rewards")
     plt.title(title)
-    plt.savefig('./graphs/SAC_results_PLEASE.png')
+    plt.savefig('./graphs/SAC_results_11_10.png')
     print("Graph Saved")
     plt.show()
 
@@ -46,7 +46,7 @@ print(model.policy)
 #learn the model
 model.learn(total_timesteps=400000, log_interval=10)
 #save learnt model
-model.save(f"./models/SAC_trained_nav2_{lr}_Please")
+model.save(f"./models/SAC_trained_nav2_{lr}_11")
 
 # model.save_replay_buffer(f"./replay/sac_replay_buffer_{lr}")
 
@@ -56,7 +56,7 @@ policy.save(f"./policy/sac_{lr}")
 # #get training results and save to csv
 df = load_results(log_dir)
 # print(f"There are {len(df)} results")
-df.to_csv(f"./results/SAC_training_results_06_10_lr_{lr}_epLen_{4000}_please.csv", index=False)
+df.to_csv(f"./results/SAC_training_results_11_10_lr_{lr}_epLen_{4000}_11.csv", index=False)
 print("Training Results Written")
 
 #plot training results
