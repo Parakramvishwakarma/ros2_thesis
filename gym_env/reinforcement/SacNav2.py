@@ -35,13 +35,13 @@ path = os.path.join(parent, log_dir)
 # print("path", path)
 os.makedirs(path, exist_ok=True)
 
-lr = 0.00001
+lr = 0.00005
 
 env = CustomGymnasiumEnvNav2()
 
 env = Monitor(env, log_dir)
 
-model = SAC("MultiInputPolicy", env, learning_rate=lr, verbose=1)
+model = SAC("MultiInputPolicy", env, learning_rate=lr, batch_size=512, ent_coef='auto_0.1', verbose=1)
 print(model.policy)
 #learn the model
 model.learn(total_timesteps=400000, log_interval=10)

@@ -239,6 +239,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
 
         rclpy.spin_once(self.publishNode, timeout_sec=1.0)
         # Wait for new scan and pose data
+        time.sleep(0.75)
         rclpy.spin_once(self.subscribeNode, timeout_sec=1.0)
 
         self.scan_data = self.subscribeNode.scan_data
@@ -301,8 +302,6 @@ class CustomGymnasiumEnvNav2(gym.Env):
         if terminated == False and self.counter > self.episode_length:
             self.subscribeNode.get_logger().info("Episode Finished")
             truncated = True
-        # elif self.angularVelocityCounter == 50:
-        #     truncated = True
         else:
             truncated = False
 
@@ -417,35 +416,39 @@ class CustomGymnasiumEnvNav2(gym.Env):
         # Coefficients for each reward component
         alpha = -0.5  # Penalty for heading error
         beta = 5.0    # Reward for reducing distance to the goal
-        gamma = -2 # Penalty for proximity to obstacles
-        roh = 0.7    # Reward for maintaining linear speed
+        gamma = -3 # Penalty for proximity to obstacles
+        roh = 0.2    # Reward for maintaining linear speed
         delta = -0.8  # Path deviation penalty
+        mu = -0.3     # Penalty for high angular velocity
         goal_reached_bonus = 2000  # Large bonus for reaching the goal
         collision_penalty = -1500  # High penalty for collisions
 
         # Base reward
         reward = 0
 
-        # normalized_linear_velocity = self.linearVelocity / 5.0  # Normalized to range [-1, 1]
-        # normalized_angular_velocity = self.angularVelocity / 3.14  # Normalized to range [-1, 1]
-
         if self.lastDistanceToTarget is not None:
             progress = (self.lastDistanceToTarget - self.newDistanceToTarget)
             reward += beta * progress  
+        
+        reward += 10 / (self.newDistanceToTarget + 0.1)
 
         # Heading alignment reward (0 when aligned, pi when opposite)
         heading_reward = self.pathAngle
         reward += alpha * heading_reward
 
         # Penalty for being too close to obstacles
-        if self.closestObstacle < 1.25:
-            obstacle_penalty = (1 / self.closestObstacle)  # Higher penalty the closer the obstacle
-            reward += gamma * obstacle_penalty
+        if self.newDistanceToTarget > 1:
+            if self.closestObstacle < 1.25:
+                obstacle_penalty = (1 / self.closestObstacle)  # Higher penalty the closer the obstacle
+                reward += gamma * obstacle_penalty
 
         # Reward for maintaining a reasonable linear velocity
         reward += roh * self.linearVelocity
+        reward += mu * abs(self.angularVelocity)
 
         reward += delta * self.closestPathDistance  # Penalize deviations
+
+        # self.reward = np.clip(reward, -10, 10)
    
         # Check for terminal conditions and apply appropriate rewards/penalties
         if self.newDistanceToTarget < 0.5:  # Goal reached
