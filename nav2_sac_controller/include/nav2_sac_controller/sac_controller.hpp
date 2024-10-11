@@ -26,7 +26,6 @@
 #include "nav_msgs/msg/odometry.hpp"
 #include "tf2_ros/buffer.h"
 #include "nav2_costmap_2d/costmap_2d_ros.hpp"
-#include "custom_interfaces/msg/observations.hpp"     // CHANGE
 
 
 

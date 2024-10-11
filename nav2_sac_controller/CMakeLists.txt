@@ -27,7 +27,6 @@ find_package(nav2_costmap_2d REQUIRED)
 find_package(pluginlib REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
-find_package(custom_interfaces REQUIRED)
 
 
 # add_executable(nav2_sac_controller src/nav2_sac_controller.cpp)
@@ -66,7 +65,6 @@ ament_target_dependencies(
   "nav2_costmap_2d"
   "pluginlib"
   "tf2"
-  "custom_interfaces"
 )
 
 # Set compile definitions
