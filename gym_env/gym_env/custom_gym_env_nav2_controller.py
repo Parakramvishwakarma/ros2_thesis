@@ -232,6 +232,13 @@ class CustomGymnasiumEnvNav2(gym.Env):
 
     def step(self, action):
         #the function includes a step counter to keep track of terminal //..condition
+        test = self.action_space.shape[0]
+        test2 = list((256,256))
+        final = [test] + list(test2)
+        self.subscribeNode.get_logger().info(f"{final}, {test2}, {test}")
+
+        
+
         self.counter += 1
         linear_vel = action[0] * 5.0  
         angular_vel = action[1] * 3.14 
