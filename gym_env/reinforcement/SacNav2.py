@@ -38,6 +38,8 @@ os.makedirs(path, exist_ok=True)
 lr = 0.00005
 
 env = CustomGymnasiumEnvNav2()
+print(env.observation_space.shape)
+print(env.action_space.shape)
 
 env = Monitor(env, log_dir)
 

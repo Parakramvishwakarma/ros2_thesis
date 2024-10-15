@@ -192,16 +192,10 @@ class CustomGymnasiumEnvNav2(gym.Env):
 
         # Define action and observation space
         self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(2,), dtype=np.float32)
-        self.observation_space = spaces.Dict({
+  
+        self.observation_space = spaces.Box({
             'lidar': spaces.Box(low=0, high=12, shape=(3,640), dtype=np.float32),
-            'linear_velocity': spaces.Box(low=0, high=5, shape=(1,), dtype=np.float32),
-            'angular_velocity': spaces.Box(low=0, high=3.14, shape=(1,), dtype=np.float32),
-            'heading_error': spaces.Box(low=0, high=3.14, shape=(1,), dtype=np.float32),
-            'path_deviation': spaces.Box(low=0, high=3.14, shape=(1,), dtype=np.float32),
-            'relative_goal': spaces.Box(low=-100.0, high=100.0, shape=(2,), dtype=np.float32),
-            'current_pose': spaces.Box(low=-100.0, high=100.0, shape=(2,), dtype=np.float32), 
-            'target_pose' : spaces.Box(low=-100.0, high=100.0, shape=(2,), dtype=np.float32),     
-            'global_path': spaces.Box(low=-50.0, high=50.0, shape=(self.lookAheadDist,2), dtype=np.float32),
+            'other_obs': spaces.Box(low = -100, high = 100, shape= (10,), dtype=np.float32)  
         })
        
 
@@ -286,17 +280,12 @@ class CustomGymnasiumEnvNav2(gym.Env):
             self._calculateReward()
             #this will check te terminal conditions and if its terminated update self.reward accordingly
             terminated = self._checkTerminalConditions()
-
+            other_obs = np.array([self.linearVelocity, self.angularVelocity, self.pathAngle, self.closestPathDistance, self.relativeGoal,  [self.currentPose.position.x, self.currentPose.position.y], [self.target_pose.position.x, self.target_pose.position.y]])
+            other_obs = other_obs.flatten()
+            print(other_obs.shape)
             observation = {
                 'lidar': self.lidarTracking,
-                'linear_velocity': self.linearVelocity,
-                'angular_velocity': self.angularVelocity,
-                'heading_error': self.pathAngle,
-                'path_deviation': self.closestPathDistance,
-                'relative_goal': self.newDistanceToTarget,
-                'current_pose': [self.currentPose.position.x, self.currentPose.position.y],  
-                'target_pose': [self.target_pose.position.x, self.target_pose.position.y] ,    
-                'global_path': self.pathArrayConverted,
+                'other_obs': other_obs
             }
 
         else:
@@ -386,17 +375,14 @@ class CustomGymnasiumEnvNav2(gym.Env):
             self.pathAngle = self._calculate_heading_angle(self.currentPose, self.pathArray[self.lookAheadPointIndex].pose)
             self._convertPathArray()
             self.subscribeNode.get_logger().info(f"{self.linearVelocity} ,{self.angularVelocity} {self.pathAngle}, {self.relativeGoal}")
+            other_obs = np.array([self.linearVelocity, self.angularVelocity, self.pathAngle, 0 , self.relativeGoal,  [self.currentPose.position.x, self.currentPose.position.y], [self.target_pose.position.x, self.target_pose.position.y]])
+            other_obs = other_obs.flatten()
+            print(other_obs.shape)
             observation = {
                 'lidar': self.lidarTracking,
-                'linear_velocity': self.linearVelocity,
-                'angular_velocity': self.angularVelocity,
-                'heading_error': self.pathAngle,
-                'path_deviation': 0,
-                'relative_goal': self.newDistanceToTarget,
-                'current_pose': [self.currentPose.position.x, self.currentPose.position.y],  
-                'target_pose': [self.target_pose.position.x, self.target_pose.position.y] ,      
-                'global_path': self.pathArrayConverted,
+                'other_obs': other_obs
             }
+
         else:
             observation = self.observation_space.sample()  # Return a random observation within space
         return observation, {}
