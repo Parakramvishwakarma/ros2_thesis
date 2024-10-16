@@ -3,6 +3,7 @@ from gymnasium import spaces
 import numpy as np
 import rclpy
 import pandas as pd
+import csv
 import math as m
 from rclpy.node import Node
 from sensor_msgs.msg import LaserScan
@@ -144,10 +145,30 @@ class Publisher(Node):
 class CustomGymnasiumEnvNav2(gym.Env):
     def __init__(self):
         super(CustomGymnasiumEnvNav2, self).__init__()
-        rclpy.init()
+        if not rclpy.ok():  # Check if rclpy has already been initialized
+            rclpy.init()   
         self.counter = 0
         self.episode_length = 4000
         #inititalise variables
+
+        self.csv_file = "./reward_log.csv"
+        with open(self.csv_file, mode='w') as f:
+            writer = csv.writer(f)
+            writer.writerow(['TimeStep', 'HeadingPenalty', 'DistanceReward', 'ObstaclePenalty', 'LinearSpeedReward', 'AngularPenalty', 'PathDeviationPenalty', 'OverallProgress', 'TotalReward'])
+
+        #reward components
+        self.heading_penalty = 0
+        self.distance_reward = 0
+        self.obstacle_penalty = 0
+        self.linear_speed_reward = 0
+        self.angular_penalty = 0
+        self.path_deviation_penalty = 0
+        self.goal_reached_bonus = 0
+        self.collision_penalty = 0
+        self.overall_progress_reward = 0
+
+
+
 
         #these are all the intermediary variables used to create the state and the reward for the agent
         self.pathAngle = None
@@ -164,7 +185,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.obstacleAngle = None
 
         self.closestPathPointIndex  = 0
-        self.closestPathDistance = None
+        self.closestPathDistance = 0
 
         #this is the param for how many poses ahead the path we look to find the path angle
         self.lookAheadDist = 40 
@@ -191,12 +212,9 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.lookAheadPoint = None
 
         # Define action and observation space
-        self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(2,), dtype=np.float32)
+        self.action_space = spaces.Box(low=-3.14, high=3.14, shape=(2,), dtype=np.float32)
   
-        self.observation_space = spaces.Box({
-            'lidar': spaces.Box(low=0, high=12, shape=(3,640), dtype=np.float32),
-            'other_obs': spaces.Box(low = -100, high = 100, shape= (10,), dtype=np.float32)  
-        })
+        self.observation_space = spaces.Box(low=-100, high=100, shape=(3*640 + 10,), dtype=np.float32)
        
 
     def _initialise(self):
@@ -221,26 +239,29 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.currentPose = None
         self.pathArray = None
         self.closestPathPointIndex  = 0
-        self.closestPathDistance = None
+        self.closestPathDistance = 0
+
+        #reward components
+        self.heading_penalty = 0
+        self.distance_reward = 0
+        self.obstacle_penalty = 0
+        self.linear_speed_reward = 0
+        self.angular_penalty = 0
+        self.path_deviation_penalty = 0
+        self.goal_reached_bonus = 0
+        self.collision_penalty = 0
+        self.overall_progress_reward = 0
 
 
     def step(self, action):
         #the function includes a step counter to keep track of terminal //..condition
-        test = self.action_space.shape[0]
-        test2 = list((256,256))
-        final = [test] + list(test2)
-        self.subscribeNode.get_logger().info(f"{final}, {test2}, {test}")
-
-        
-
         self.counter += 1
-        linear_vel = action[0] * 5.0  
-        angular_vel = action[1] * 3.14 
+        linear_vel = action[0]
+        angular_vel = action[1]
         self.publishNode.sendAction(linear_vel, angular_vel) #send action from the model
 
         rclpy.spin_once(self.publishNode, timeout_sec=1.0)
         # Wait for new scan and pose data
-        time.sleep(0.75)
         rclpy.spin_once(self.subscribeNode, timeout_sec=1.0)
 
         self.scan_data = self.subscribeNode.scan_data
@@ -280,14 +301,14 @@ class CustomGymnasiumEnvNav2(gym.Env):
             self._calculateReward()
             #this will check te terminal conditions and if its terminated update self.reward accordingly
             terminated = self._checkTerminalConditions()
-            other_obs = np.array([self.linearVelocity, self.angularVelocity, self.pathAngle, self.closestPathDistance, self.relativeGoal,  [self.currentPose.position.x, self.currentPose.position.y], [self.target_pose.position.x, self.target_pose.position.y]])
-            other_obs = other_obs.flatten()
-            print(other_obs.shape)
-            observation = {
-                'lidar': self.lidarTracking,
-                'other_obs': other_obs
-            }
-
+            other_obs = np.concatenate([
+                np.array([self.linearVelocity, self.angularVelocity, self.pathAngle, self.closestPathDistance]),  # Single valued observations
+                np.array(self.relativeGoal),  # 2D array
+                np.array([self.currentPose.position.x, self.currentPose.position.y]),  # 2D array
+                np.array([self.target_pose.position.x, self.target_pose.position.y])  # 2D array
+            ])
+            obs = np.concatenate([self.lidarTracking.flatten(), other_obs])
+            observation = obs
         else:
             self.subscribeNode.get_logger().info("Scan or observation data missing")
             observation = self.observation_space.sample()
@@ -301,15 +322,13 @@ class CustomGymnasiumEnvNav2(gym.Env):
         else:
             truncated = False
 
-        return observation, self.reward, terminated, truncated, {}
+        return observation, self.reward, terminated, truncated
     
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed, options=options)
         #reset the costmaps
-        self.publishNode.clear_local_costmap()
-        self.publishNode.clear_global_costmap()
-
+    
         #check if we have collided with an obstacle if so then run the backup and spin
         while self.collision:
             # self._backup_and_spin()
@@ -340,6 +359,8 @@ class CustomGymnasiumEnvNav2(gym.Env):
                 
         #reset variables
         self._initialise()
+        self.publishNode.clear_local_costmap()
+        self.publishNode.clear_global_costmap()
         self.publishNode.sendAction(0.0, 0.0)
         time.sleep(5)
         if self.target_pose == None:
@@ -375,17 +396,17 @@ class CustomGymnasiumEnvNav2(gym.Env):
             self.pathAngle = self._calculate_heading_angle(self.currentPose, self.pathArray[self.lookAheadPointIndex].pose)
             self._convertPathArray()
             self.subscribeNode.get_logger().info(f"{self.linearVelocity} ,{self.angularVelocity} {self.pathAngle}, {self.relativeGoal}")
-            other_obs = np.array([self.linearVelocity, self.angularVelocity, self.pathAngle, 0 , self.relativeGoal,  [self.currentPose.position.x, self.currentPose.position.y], [self.target_pose.position.x, self.target_pose.position.y]])
-            other_obs = other_obs.flatten()
-            print(other_obs.shape)
-            observation = {
-                'lidar': self.lidarTracking,
-                'other_obs': other_obs
-            }
-
+            other_obs = np.concatenate([
+                np.array([self.linearVelocity, self.angularVelocity, self.pathAngle, self.closestPathDistance]),  # Single valued observations
+                np.array(self.relativeGoal),  # 2D array
+                np.array([self.currentPose.position.x, self.currentPose.position.y]),  # 2D array
+                np.array([self.target_pose.position.x, self.target_pose.position.y])  # 2D array
+            ])
+            obs = np.concatenate([self.lidarTracking.flatten(), other_obs])
+            observation = obs
         else:
             observation = self.observation_space.sample()  # Return a random observation within space
-        return observation, {}
+        return observation
     
     def render(self, mode='human'):
         pass
@@ -403,63 +424,55 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.pathArrayConverted = np.zeros((self.lookAheadDist, 2), dtype=np.float32)
         for i in range(self.closestPathPointIndex, self.lookAheadPointIndex):
             self.pathArrayConverted[i - self.closestPathPointIndex] = [self.pathArray[i].pose.position.x, self.pathArray[i].pose.position.y]
-    
+
 
     def _calculateReward(self):
         # Coefficients for each reward component
         alpha = -0.5  # Penalty for heading error
         beta = 5.0    # Reward for reducing distance to the goal
-        gamma = -3 # Penalty for proximity to obstacles
-        roh = 0.2    # Reward for maintaining linear speed
+        gamma = -3.0  # Penalty for proximity to obstacles
+        roh = 0.2     # Reward for maintaining linear speed
         delta = -0.8  # Path deviation penalty
         mu = -0.3     # Penalty for high angular velocity
         goal_reached_bonus = 2000  # Large bonus for reaching the goal
         collision_penalty = -1500  # High penalty for collisions
 
-        # Base reward
-        reward = 0
+        # Calculate each reward component
+        self.heading_penalty = alpha * self.pathAngle
 
+        self.distance_reward = 0
         if self.lastDistanceToTarget is not None:
-            progress = (self.lastDistanceToTarget - self.newDistanceToTarget)
-            reward += beta * progress  
-        
-        reward += 10 / (self.newDistanceToTarget + 0.1)
+            self.distance_reward = beta * self.changeInDistanceToTarget
 
-        # Heading alignment reward (0 when aligned, pi when opposite)
-        heading_reward = self.pathAngle
-        reward += alpha * heading_reward
+        self.overall_progress_reward = 10 / (self.newDistanceToTarget + 0.1)
 
-        # Penalty for being too close to obstacles
+        self.obstacle_penalty = 0
         if self.newDistanceToTarget > 1:
             if self.closestObstacle < 1.25:
-                obstacle_penalty = (1 / self.closestObstacle)  # Higher penalty the closer the obstacle
-                reward += gamma * obstacle_penalty
+                self.obstacle_penalty = gamma * (1 / self.closestObstacle)
+    
+        self.linear_speed_reward = roh * self.linearVelocity
 
-        # Reward for maintaining a reasonable linear velocity
-        reward += roh * self.linearVelocity
-        reward += mu * abs(self.angularVelocity)
+        self.angular_penalty = mu * abs(self.angularVelocity)
+        
+        self.path_deviation_penalty = delta * self.closestPathDistance
 
-        reward += delta * self.closestPathDistance  # Penalize deviations
+        total_reward = (self.heading_penalty + self.distance_reward + self.obstacle_penalty +  self.overall_progress_reward +
+                        self.linear_speed_reward + self.angular_penalty + self.path_deviation_penalty)
 
-        # self.reward = np.clip(reward, -10, 10)
-   
-        # Check for terminal conditions and apply appropriate rewards/penalties
         if self.newDistanceToTarget < 0.5:  # Goal reached
-            reward += goal_reached_bonus
+            total_reward += goal_reached_bonus
             self.subscribeNode.get_logger().info("Goal reached!")
-        elif self.closestObstacle < 0.5 and self.obstacleAngle >= 90 and self.obstacleAngle <= 270 :  # Collision with obstacle
-            reward += collision_penalty
-            self.collision = True
-            self.subscribeNode.get_logger().info("TERMINATED - COLLISION WITH OBSTACLE")
-        elif self.closestObstacle < 0.65 and (self.obstacleAngle < 90 or self.obstacleAngle > 270) :  # Collision with obstacle
-            reward += collision_penalty
+        elif self.closestObstacle < 0.5 and self.obstacleAngle >= 90 and self.obstacleAngle <= 270:  # Collision with obstacle
+            total_reward += collision_penalty
             self.collision = True
             self.subscribeNode.get_logger().info("TERMINATED - COLLISION WITH OBSTACLE")
 
-        self.reward = reward
+        self.reward = round(total_reward,3)
         self.subscribeNode.get_logger().info(f"obs: {self.closestObstacle}, heading: {self.pathAngle}, dist: {self.newDistanceToTarget}, path_dev: {self.closestPathDistance} vel: {self.linearVelocity}")
-        self.subscribeNode.get_logger().info(f"The reward is {self.reward}")
-        return reward
+        self.subscribeNode.get_logger().info(f"The total reward is {self.reward}")
+        self._log_rewards_to_csv()
+        return total_reward
 
     def _checkTerminalConditions(self): 
         if self.newDistanceToTarget < 0.5:  # Goal reached
@@ -582,6 +595,12 @@ class CustomGymnasiumEnvNav2(gym.Env):
         return self._calculate_heading_angle(self.currentPose, self.lookAheadPoint)
 
 
+    def _log_rewards_to_csv(self):
+        # Append the reward components to the CSV file at each time step
+        with open(self.csv_file, mode='a') as f:
+            writer = csv.writer(f)
+            writer.writerow([self.counter, self.heading_penalty, self.distance_reward, self.obstacle_penalty,
+                             self.linear_speed_reward, self.angular_penalty, self.path_deviation_penalty, self.overall_progress_reward, self.reward])
 
 
 

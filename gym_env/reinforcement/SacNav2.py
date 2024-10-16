@@ -44,7 +44,7 @@ print(env.action_space.shape)
 env = Monitor(env, log_dir)
 
 model = SAC("MultiInputPolicy", env, learning_rate=lr, batch_size=512, ent_coef='auto_0.1', verbose=1)
-print(model.policy)
+# print(model.policy)
 #learn the model
 model.learn(total_timesteps=400000, log_interval=10)
 #save learnt model
