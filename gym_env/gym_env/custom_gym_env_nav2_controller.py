@@ -467,6 +467,10 @@ class CustomGymnasiumEnvNav2(gym.Env):
             total_reward += collision_penalty
             self.collision = True
             self.subscribeNode.get_logger().info("TERMINATED - COLLISION WITH OBSTACLE")
+        elif self.closestObstacle < 0.65 and (self.obstacleAngle < 90 or self.obstacleAngle > 270) :  # Collision with obstacle
+            total_reward += collision_penalty
+            self.collision = True
+            self.subscribeNode.get_logger().info("TERMINATED - COLLISION WITH OBSTACLE")
 
         self.reward = round(total_reward,3)
         self.subscribeNode.get_logger().info(f"obs: {self.closestObstacle}, heading: {self.pathAngle}, dist: {self.newDistanceToTarget}, path_dev: {self.closestPathDistance} vel: {self.linearVelocity}")
