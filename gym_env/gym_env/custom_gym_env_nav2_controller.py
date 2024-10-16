@@ -55,6 +55,12 @@ class Subscriber(Node):
             self.path_callback,
             qos_profile_static)
         
+        self.subcription_costmap = self.create_subscription(
+            OccupancyGrid,
+            '/global_costmap/costmap',
+            self.map_callback,
+            qos_profile_static)
+
         # Create the subscriber
         self.subscription_pose = self.create_subscription(
             PoseWithCovarianceStamped,
@@ -62,16 +68,12 @@ class Subscriber(Node):
             self.pose_callback,
             qos_profile_pose)
         
-    
-
         self.scan_data = None
         self.speed_data = None
         self.path_data = None
-        self.og_cost_map_grid = None
-        self.map_update = None
-        self.local_cost_map_grid = None
-        self.map_local_update = None
         self.pose_data = None
+        self.map_data = None
+        self.map_info = None
 
     def scan_callback(self, msg):
         self.scan_data = msg
@@ -82,7 +84,9 @@ class Subscriber(Node):
        
     def path_callback(self, msg):
         #this is the array of poses to follow in the global plan
-        self.path_data = msg.poses
+        self.path_data = []
+        for pose_stamped in msg.poses:
+            self.path_data.append((pose_stamped.pose.position.x, pose_stamped.pose.position.y))
         
     def map_callback(self, msg):
         #This is the array of occupancy grid we are not currently sure waht the obejctive of the origin is        
@@ -90,6 +94,17 @@ class Subscriber(Node):
 
     def pose_callback(self, msg):
         self.pose_data = msg.pose.pose
+
+    def map_callback(self, msg):
+        self.map_info = msg.info
+        width = msg.info.width
+        height = msg.info.height
+
+        # Convert the map data to a numpy array
+        self.map_data = np.array(msg.data, dtype=np.int8).reshape((height, width))
+
+        # Replace -1 (unknown) values with a different value for better visualization
+        # self.map_data = np.where(self.map_data == -1, 50, self.map_data)
    
 
 class Publisher(Node):
@@ -178,9 +193,6 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.collision_penalty = 0
         self.overall_progress_reward = 0
 
-
-
-
         #these are all the intermediary variables used to create the state and the reward for the agent
         self.pathAngle = None
         self.lastDistanceToTarget = None
@@ -190,10 +202,11 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.reward = 0
         self.linearVelocity = None
         self.angularVelocity = None
-        self.lidarTracking = np.zeros((3, 640), dtype=np.float32)
         self.collision = False
         self.pathArrayConverted = []
         self.obstacleAngle = None
+        self.mapInfo = None
+        self.mapData = None
 
         self.closestPathPointIndex  = 0
         self.closestPathDistance = 0
@@ -225,7 +238,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
         # Define action and observation space
         self.action_space = spaces.Box(low=-3.14, high=3.14, shape=(2,), dtype=np.float32)
   
-        self.observation_space = spaces.Box(low=-100, high=100, shape=(3*640 + 10,), dtype=np.float32)
+        self.observation_space = spaces.Box(low=-100, high=100, shape=(663*720 + 10,), dtype=np.float32)
        
 
     def _initialise(self):
@@ -241,7 +254,6 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.reward = 0
         self.linearVelocity = None
         self.angularVelocity = None
-        self.lidarTracking = np.zeros((3, 640), dtype=np.float32)
         self.counter = 0
         self.obstacleAngle = None
         #these are data hodling variables
@@ -251,6 +263,8 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.pathArray = None
         self.closestPathPointIndex  = 0
         self.closestPathDistance = 0
+        self.mapInfo = None
+        self.mapData = None
 
         #reward components
         self.heading_penalty = 0
@@ -262,6 +276,11 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.goal_reached_bonus = 0
         self.collision_penalty = 0
         self.overall_progress_reward = 0
+
+    def _initialiseDataVars(self):
+        self.scan_data = None
+        self.speed_twist = None
+        self.currentPose = None
 
 
     def step(self, action):
@@ -275,26 +294,26 @@ class CustomGymnasiumEnvNav2(gym.Env):
         # Wait for new scan and pose data
         rclpy.spin_once(self.subscribeNode, timeout_sec=1.0)
 
+        self._initialiseDataVars()
+
         self.scan_data = self.subscribeNode.scan_data
         self.speed_twist = self.subscribeNode.speed_data
-        self.pathArray = self.subscribeNode.path_data
         self.currentPose  = self.subscribeNode.pose_data
+        #these dont neccearily need to be updated
+        self.mapData = self.subscribeNode.map_data
+        self.mapInfo = self.subscribeNode.map_info
      
         #get udpated observations from odometry
-        if ( self.scan_data and self.speed_twist and self.currentPose and self.pathArray):
+        if ( self.scan_data and self.speed_twist and self.currentPose and self.mapData):
             if self.counter ==1:
                 self.subscribeNode.get_logger().info("Running New Episode")
-            
             #find the pose of the target in the global frame
             self._findRelativeGoal()
-            
             #process all the Lidar observations and update lidar array of historical observations
             self.closestObstacle = min(self.scan_data.ranges)  #find the closest obstacle
             self.obstacleAngle = round(self.scan_data.ranges.index(self.closestObstacle) * 0.5625,3)
             self.closestObstacle = round(self.closestObstacle, 3)
-            self._roundLidar()
-            self._updateLidar()
-
+    
             self.lastDistanceToTarget = self.newDistanceToTarget
             self.newDistanceToTarget = self._getDistance()
             if self.lastDistanceToTarget:
@@ -303,22 +322,22 @@ class CustomGymnasiumEnvNav2(gym.Env):
             self._find_closest_path_point_and_distance() #this will update the class variables for closets point index and distance
             self.pathAngle = self._findPathAngle()
 
-            #this will take the path array that is given and convert the poses in the array into an array of x,y coordinates
-            self._convertPathArray()
-
             self.linearVelocity= round(self.speed_twist.linear.x, 2) 
             self.angularVelocity = round(self.speed_twist.angular.z,2)
+
+            image = self._fillMap()
             #this is us updating the reward class variable with 
             self._calculateReward()
             #this will check te terminal conditions and if its terminated update self.reward accordingly
             terminated = self._checkTerminalConditions()
+
             other_obs = np.concatenate([
                 np.array([self.linearVelocity, self.angularVelocity, self.pathAngle, self.closestPathDistance]),  # Single valued observations
                 np.array(self.relativeGoal),  # 2D array
                 np.array([self.currentPose.position.x, self.currentPose.position.y]),  # 2D array
                 np.array([self.target_pose.position.x, self.target_pose.position.y])  # 2D array
             ])
-            obs = np.concatenate([self.lidarTracking.flatten(), other_obs])
+            obs = np.concatenate([image.flatten(), other_obs])
             observation = obs
         else:
             self.subscribeNode.get_logger().info("Scan or observation data missing")
@@ -394,25 +413,25 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.speed_twist = self.subscribeNode.speed_data
         self.pathArray = self.subscribeNode.path_data
         self.currentPose  = self.subscribeNode.pose_data
+        self.mapData = self.subscribeNode.map_data 
+        self.mapInfo = self.subscribeNode.map_info
 
         #get udpated observations from odometry
-        if (self.scan_data and self.speed_twist and self.currentPose and self.pathArray):
+        if (self.scan_data and self.speed_twist and self.currentPose and self.pathArray and self.mapData):
             self._findRelativeGoal()
-            self._roundLidar()
-            self._updateLidar()
             self.newDistanceToTarget = self._getDistance()
             self.linearVelocity= round(self.speed_twist.linear.x, 2) 
             self.angularVelocity = round(self.speed_twist.angular.z,2)
             self.lookAheadPointIndex = min(len(self.pathArray) -1, self.lookAheadDist)
-            self.pathAngle = self._calculate_heading_angle(self.currentPose, self.pathArray[self.lookAheadPointIndex].pose)
-            self._convertPathArray()
+            self.pathAngle = self._calculate_heading_angle(self.currentPose, self.pathArray[self.lookAheadPointIndex])
+            image = self._fillMap()
             other_obs = np.concatenate([
                 np.array([self.linearVelocity, self.angularVelocity, self.pathAngle, self.closestPathDistance]),  # Single valued observations
                 np.array(self.relativeGoal),  # 2D array
                 np.array([self.currentPose.position.x, self.currentPose.position.y]),  # 2D array
                 np.array([self.target_pose.position.x, self.target_pose.position.y])  # 2D array
             ])
-            obs = np.concatenate([self.lidarTracking.flatten(), other_obs])
+            obs = np.concatenate([image.flatten(), other_obs])
             observation = obs
         else:
             observation = self.observation_space.sample()  # Return a random observation within space
@@ -431,7 +450,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.target_pose.position.y = float(np.random.randint(-9, 9))
 
     def _convertPathArray(self):
-        self.pathArrayConverted = np.zeros((self.lookAheadDist, 2), dtype=np.float32)
+        self.pathArrayConverted = np.zeros((len(self.lookAheadDist), 2), dtype=np.float32)
         for i in range(self.closestPathPointIndex, self.lookAheadPointIndex):
             self.pathArrayConverted[i - self.closestPathPointIndex] = [self.pathArray[i].pose.position.x, self.pathArray[i].pose.position.y]
 
@@ -487,6 +506,50 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.subscribeNode.get_logger().info(f"The total reward is {self.reward}")
         self._log_rewards_to_csv()
         return total_reward
+    
+
+    def _fillMap(self):
+        if self.mapData and self.mapInfo:
+            if self.pathArray:
+                resolution = self.mapInfo.resolution
+                origin_x = self.mapInfo.origin.position.x
+                origin_y = self.mapInfo.origin.position.y
+                display_map = self.mapData.copy()
+                #add the target pose
+                Tgrid_x = int((self.target_pose.position.x - origin_x) / resolution)
+                Tgrid_y = int((self.target_pose.position.y - origin_y) / resolution)
+                # Change the map value at the robot's position to a specific value (e.g., 100 for visualization)
+                padding_size = 5  # Number of cells to pad around the robot
+                for dx in range(-padding_size, padding_size + 1):
+                    for dy in range(-padding_size, padding_size + 1):
+                        nx, ny = Tgrid_x + dx, Tgrid_y + dy
+                        if 0 <= nx < display_map.shape[1] and 0 <= ny < display_map.shape[0]:
+                            display_map[ny, nx] =  200 # Mark the target'
+
+                #add the current pose on the map
+                if self.currentPose:
+                    grid_x = int((self.currentPose.position.x - origin_x) / resolution)
+                    grid_y = int((self.currentPose.position.y - origin_y) / resolution)
+                    # Change the map value at the robot's position to a specific value (e.g., 100 for visualization)
+                    padding_size = 5  # Number of cells to pad around the robot
+                    for dx in range(-padding_size, padding_size + 1):
+                        for dy in range(-padding_size, padding_size + 1):
+                            nx, ny = grid_x + dx, grid_y + dy
+                            if 0 <= nx < display_map.shape[1] and 0 <= ny < display_map.shape[0]:
+                                display_map[ny, nx] =  200 # Mark the robot'
+                
+                #add the map
+                for (pose_x, pose_y) in self.pathArray:
+                    path_grid_x = int((pose_x - origin_x) / resolution)
+                    path_grid_y = int((pose_y - origin_y) / resolution)
+                    # Update the map value for the path
+                    if 0 <= path_grid_x < display_map.shape[1] and 0 <= path_grid_y < display_map.shape[0]:
+                        display_map[path_grid_y, path_grid_x] = 150  # Mark t
+                return display_map
+            else:
+                self.subscribeNode.get_logger().info("FUCK NO Path")
+        else:
+            self.subscribeNode.get_logger().info("FUCK NO MAP")
 
     def _checkTerminalConditions(self): 
         if self.newDistanceToTarget < 0.5:  # Goal reached
@@ -507,14 +570,14 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.scan_data.ranges = processed_ranges.tolist()
 
     def _getDistance(self):
-        return round((self.relativeGoal[0]**2 + self.relativeGoal[1]**2)**0.5,3)
+        return round(self.relativeGoal[0],2)
 
     def _calculate_heading_angle(self,current_pose, goal_pose):
         # Extract x and y positions
         current_x = current_pose.position.x
         current_y = current_pose.position.y
-        goal_x = goal_pose.position.x
-        goal_y = goal_pose.position.y
+        goal_x = goal_pose[0]
+        goal_y = goal_pose[0]
 
         # Calculate the desired heading using atan2
         desired_heading = m.atan2(goal_y - current_y, goal_x - current_x)
@@ -550,9 +613,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.lidarTracking[1] = self.lidarTracking[0]
         self.lidarTracking[0] = self.scan_data.ranges
 
-    
     def _findRelativeGoal(self):
-      
         # Extract robot's current position and orientation (yaw) in the global frame
         x_robot = self.currentPose.position.x
         y_robot = self.currentPose.position.y
@@ -565,15 +626,23 @@ class CustomGymnasiumEnvNav2(gym.Env):
 
         x_goal = self.target_pose.position.x
         y_goal = self.target_pose.position.y
-        
+
+        # Calculate the distance to the goal
         dx = x_goal - x_robot
         dy = y_goal - y_robot
-        
-        # Transform the displacement vector into the robot's local frame
-        x_relative = dx * m.cos(yaw_robot) + dy * m.sin(yaw_robot)
-        y_relative = -dx * m.sin(yaw_robot) + dy * m.cos(yaw_robot)
-        
-        self.relativeGoal =  np.array([x_relative, y_relative]).astype(float)
+        distance_to_goal = m.sqrt(dx**2 + dy**2)
+
+        # Calculate the desired yaw angle to the goal in the global frame
+        goal_yaw_global = m.atan2(dy, dx)
+
+        # Calculate the relative yaw (difference between the goal's yaw and the robot's current yaw)
+        relative_yaw = goal_yaw_global - yaw_robot
+
+        # Normalize the relative yaw to the range [-pi, pi]
+        relative_yaw = (relative_yaw + m.pi) % (2 * m.pi) - m.pi
+
+        # Update the relative goal as [distance, relative_yaw]
+        self.relativeGoal = np.array([distance_to_goal, relative_yaw]).astype(float)
 
     def _find_closest_path_point_and_distance(self):
         """
@@ -605,7 +674,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
 
     def _findPathAngle(self):
         self.lookAheadPointIndex = min(self.closestPathPointIndex + self.lookAheadDist, len(self.pathArray) - 1)
-        self.lookAheadPoint = self.pathArray[self.lookAheadPointIndex].pose
+        self.lookAheadPoint = self.pathArray[self.lookAheadPointIndex]
         return self._calculate_heading_angle(self.currentPose, self.lookAheadPoint)
 
 

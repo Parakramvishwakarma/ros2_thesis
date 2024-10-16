@@ -29,9 +29,9 @@ def plot_learning_curve(x, filename, save_plot=True):
 
 def process_observation(flat_observation):
     # Deconstruct the flat observation back into lidar and other_obs components
-    lidar_size = 3 * 640
+    map_size = 663 * 730
     batch_size = flat_observation.shape[0]
-    lidar = torch.as_tensor(flat_observation[:, :lidar_size].reshape(batch_size, 3, 640), dtype=torch.float32)
-    other_obs = torch.as_tensor(flat_observation[:, lidar_size:], dtype=torch.float32)
+    lidar = torch.as_tensor(flat_observation[:, :map_size].reshape(batch_size, 663, 730), dtype=torch.float32)
+    other_obs = torch.as_tensor(flat_observation[:, map_size:], dtype=torch.float32)
         
     return lidar, other_obs
