@@ -23,6 +23,19 @@ from builtin_interfaces.msg import Duration
 
 class Subscriber(Node):
     def __init__(self):
+
+        qos_profile_static = QoSProfile(
+            reliability=QoSReliabilityPolicy.RELIABLE,
+            durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
+            history=QoSHistoryPolicy.KEEP_LAST,
+            depth=1
+        )   
+        qos_profile_pose = QoSProfile(
+            reliability=QoSReliabilityPolicy.BEST_EFFORT,
+            durability=QoSDurabilityPolicy.VOLATILE,
+            depth=1  # This can be adjusted as needed
+        )    
+        
         super().__init__('subscriber')
         self.subscription_scan = self.create_subscription(
             LaserScan,
@@ -50,17 +63,6 @@ class Subscriber(Node):
             qos_profile_pose)
         
     
-        qos_profile_static = QoSProfile(
-            reliability=QoSReliabilityPolicy.RELIABLE,
-            durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
-            history=QoSHistoryPolicy.KEEP_LAST,
-            depth=1
-        )   
-        qos_profile_pose = QoSProfile(
-            reliability=QoSReliabilityPolicy.BEST_EFFORT,
-            durability=QoSDurabilityPolicy.VOLATILE,
-            depth=1  # This can be adjusted as needed
-        )    
 
         self.scan_data = None
         self.speed_data = None
