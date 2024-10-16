@@ -16,7 +16,7 @@ from map_msgs.msg import OccupancyGridUpdate
 from nav2_msgs.action import BackUp, Spin
 from rclpy.action import ActionClient
 import time
-from rclpy.qos import QoSProfile, QoSDurabilityPolicy, QoSReliabilityPolicy
+from rclpy.qos import QoSProfile, QoSDurabilityPolicy, QoSReliabilityPolicy, QoSHistoryPolicy
 from builtin_interfaces.msg import Duration
 
 
@@ -28,30 +28,39 @@ class Subscriber(Node):
             LaserScan,
             '/scan',
             self.scan_callback,
-            10)
+            qos_profile_sensor_data)
+        
         self.subscription_speed = self.create_subscription(
             Odometry,
             '/diffdrive_controller/odom',
             self.speed_callback,
             qos_profile_sensor_data)
+        
         self.subcription_path = self.create_subscription(
             Path,
             '/plan',
             self.path_callback,
-            10)
+            qos_profile_static)
         
-        qos_profile = QoSProfile(
-            reliability=QoSReliabilityPolicy.RELIABLE,
-            durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
-            depth=10  # This can be adjusted as needed
-        )
         # Create the subscriber
         self.subscription_pose = self.create_subscription(
             PoseWithCovarianceStamped,
             '/amcl_pose',
             self.pose_callback,
-            qos_profile)
+            qos_profile_pose)
+        
     
+        qos_profile_static = QoSProfile(
+            reliability=QoSReliabilityPolicy.RELIABLE,
+            durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
+            history=QoSHistoryPolicy.KEEP_LAST,
+            depth=1
+        )   
+        qos_profile_pose = QoSProfile(
+            reliability=QoSReliabilityPolicy.BEST_EFFORT,
+            durability=QoSDurabilityPolicy.VOLATILE,
+            depth=1  # This can be adjusted as needed
+        )    
 
         self.scan_data = None
         self.speed_data = None
@@ -395,7 +404,6 @@ class CustomGymnasiumEnvNav2(gym.Env):
             self.lookAheadPointIndex = min(len(self.pathArray) -1, self.lookAheadDist)
             self.pathAngle = self._calculate_heading_angle(self.currentPose, self.pathArray[self.lookAheadPointIndex].pose)
             self._convertPathArray()
-            self.subscribeNode.get_logger().info(f"{self.linearVelocity} ,{self.angularVelocity} {self.pathAngle}, {self.relativeGoal}")
             other_obs = np.concatenate([
                 np.array([self.linearVelocity, self.angularVelocity, self.pathAngle, self.closestPathDistance]),  # Single valued observations
                 np.array(self.relativeGoal),  # 2D array
@@ -473,7 +481,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
             self.subscribeNode.get_logger().info("TERMINATED - COLLISION WITH OBSTACLE")
 
         self.reward = round(total_reward,3)
-        self.subscribeNode.get_logger().info(f"obs: {self.closestObstacle}, heading: {self.pathAngle}, dist: {self.newDistanceToTarget}, path_dev: {self.closestPathDistance} vel: {self.linearVelocity}")
+        self.subscribeNode.get_logger().info(f"obs: {self.closestObstacle}, heading: {self.pathAngle}, dist: {self.newDistanceToTarget}, path_dev: {self.closestPathDistance} v: {self.linearVelocity} w: {self.angularVelocity}")
         self.subscribeNode.get_logger().info(f"The total reward is {self.reward}")
         self._log_rewards_to_csv()
         return total_reward
