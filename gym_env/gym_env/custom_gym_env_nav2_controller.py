@@ -26,7 +26,7 @@ class Subscriber(Node):
 
         qos_profile_static = QoSProfile(
             reliability=QoSReliabilityPolicy.RELIABLE,
-            durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
+            durability=QoSDurabilityPolicy.VOLATILE,
             history=QoSHistoryPolicy.KEEP_LAST,
             depth=1
         )   
