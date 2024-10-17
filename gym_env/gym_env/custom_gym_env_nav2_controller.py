@@ -82,7 +82,9 @@ class Subscriber(Node):
        
     def path_callback(self, msg):
         #this is the array of poses to follow in the global plan
-        self.path_data = msg.poses
+        self.path_data = []
+        for pose_stamped in msg.poses:
+            self.path_data.append((pose_stamped.pose.position.x, pose_stamped.pose.position.y))
         
     def map_callback(self, msg):
         #This is the array of occupancy grid we are not currently sure waht the obejctive of the origin is        
@@ -260,6 +262,11 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.collision_penalty = 0
         self.overall_progress_reward = 0
 
+    def _initialiseDataVars(self):
+        self.currentPose = None
+        self.scan_data = None
+        self.speed_twist = None
+
 
     def step(self, action):
         #the function includes a step counter to keep track of terminal //..condition
@@ -272,9 +279,10 @@ class CustomGymnasiumEnvNav2(gym.Env):
         # Wait for new scan and pose data
         rclpy.spin_once(self.subscribeNode, timeout_sec=1.0)
 
+        self._initialiseDataVars()
+
         self.scan_data = self.subscribeNode.scan_data
         self.speed_twist = self.subscribeNode.speed_data
-        self.pathArray = self.subscribeNode.path_data
         self.currentPose  = self.subscribeNode.pose_data
      
         #get udpated observations from odometry
@@ -299,9 +307,6 @@ class CustomGymnasiumEnvNav2(gym.Env):
 
             self._find_closest_path_point_and_distance() #this will update the class variables for closets point index and distance
             self.pathAngle = self._findPathAngle()
-
-            #this will take the path array that is given and convert the poses in the array into an array of x,y coordinates
-            self._convertPathArray()
 
             self.linearVelocity= round(self.speed_twist.linear.x, 2) 
             self.angularVelocity = round(self.speed_twist.angular.z,2)
@@ -401,8 +406,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
             self.linearVelocity= round(self.speed_twist.linear.x, 2) 
             self.angularVelocity = round(self.speed_twist.angular.z,2)
             self.lookAheadPointIndex = min(len(self.pathArray) -1, self.lookAheadDist)
-            self.pathAngle = self._calculate_heading_angle(self.currentPose, self.pathArray[self.lookAheadPointIndex].pose)
-            self._convertPathArray()
+            self.pathAngle = self._calculate_heading_angle(self.currentPose, self.pathArray[self.lookAheadPointIndex])
             other_obs = np.concatenate([
                 np.array([self.linearVelocity, self.angularVelocity, self.pathAngle, self.closestPathDistance]),  # Single valued observations
                 np.array(self.relativeGoal),  # 2D array
@@ -504,14 +508,14 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.scan_data.ranges = processed_ranges.tolist()
 
     def _getDistance(self):
-        return round((self.relativeGoal[0]**2 + self.relativeGoal[1]**2)**0.5,3)
+        return round(self.relativeGoal[0],3)
 
     def _calculate_heading_angle(self,current_pose, goal_pose):
         # Extract x and y positions
         current_x = current_pose.position.x
         current_y = current_pose.position.y
-        goal_x = goal_pose.position.x
-        goal_y = goal_pose.position.y
+        goal_x = goal_pose[0]
+        goal_y = goal_pose[0]
 
         # Calculate the desired heading using atan2
         desired_heading = m.atan2(goal_y - current_y, goal_x - current_x)
@@ -565,12 +569,17 @@ class CustomGymnasiumEnvNav2(gym.Env):
         
         dx = x_goal - x_robot
         dy = y_goal - y_robot
+        goal_yaw_global = m.atan2(dy, dx)
+
+        # Calculate the relative yaw (difference between the goal's yaw and the robot's current yaw)
+        relative_yaw = goal_yaw_global - yaw_robot
+
+        relative_yaw = (relative_yaw + m.pi) % (2 * m.pi) - m.pi
         
         # Transform the displacement vector into the robot's local frame
-        x_relative = dx * m.cos(yaw_robot) + dy * m.sin(yaw_robot)
-        y_relative = -dx * m.sin(yaw_robot) + dy * m.cos(yaw_robot)
+        closestDis = m.sqrt(dx**2 + dy**2)
         
-        self.relativeGoal =  np.array([x_relative, y_relative]).astype(float)
+        self.relativeGoal =  np.array([closestDis, relative_yaw]).astype(float)
 
     def _find_closest_path_point_and_distance(self):
         """
@@ -586,8 +595,8 @@ class CustomGymnasiumEnvNav2(gym.Env):
 
         # Iterate through each waypoint in the path
         for i, waypoint in enumerate(self.pathArray):
-            path_x = waypoint.pose.position.x
-            path_y = waypoint.pose.position.y
+            path_x = waypoint[0]
+            path_y = waypoint[0]
 
             # Calculate Euclidean distance to the waypoint
             distance = m.sqrt((robot_x - path_x) ** 2 + (robot_y - path_y) ** 2)
@@ -602,7 +611,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
 
     def _findPathAngle(self):
         self.lookAheadPointIndex = min(self.closestPathPointIndex + self.lookAheadDist, len(self.pathArray) - 1)
-        self.lookAheadPoint = self.pathArray[self.lookAheadPointIndex].pose
+        self.lookAheadPoint = self.pathArray[self.lookAheadPointIndex]
         return self._calculate_heading_angle(self.currentPose, self.lookAheadPoint)
 
 
