@@ -32,7 +32,7 @@ def sac(env_fn, actor_critic=MLPActorCritic, ac_kwargs=dict(), seed=0,
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")  #
 
-    env, test_env = env_fn(), env_fn()
+    env, test_env = env_fn(), env_fn(pubName = "testPub", subName = "testSub")
     obs_dim = env.observation_space.shape
     act_dim = env.action_space.shape[0]
 

@@ -17,13 +17,14 @@ from nav2_msgs.action import BackUp, Spin
 from rclpy.action import ActionClient
 import time
 import threading
+from rclpy.executors import MultiThreadedExecutor
 from rclpy.qos import QoSProfile, QoSDurabilityPolicy, QoSReliabilityPolicy, QoSHistoryPolicy
 from builtin_interfaces.msg import Duration
 
 
 class Subscriber(Node):
-    def __init__(self):
-        super().__init__('subscriber')
+    def __init__(self, name):
+        super().__init__(name)  # Use a unique node name
 
         # Define QoS profiles
         qos_profile_static = QoSProfile(
@@ -69,14 +70,6 @@ class Subscriber(Node):
         self.path_data = None
         self.pose_data = None
 
-        # Start a separate thread to spin the node
-        self.spin_thread = threading.Thread(target=self._spin, daemon=True)
-        self.spin_thread.start()
-
-    def _spin(self):
-        # Spin the node in a separate thread
-        rclpy.spin(self)
-
     # Callback methods to update data
     def scan_callback(self, msg):
         self.scan_data = msg
@@ -91,20 +84,20 @@ class Subscriber(Node):
         self.pose_data = msg.pose.pose
 
 class Publisher(Node):
-    def __init__(self):
-        super().__init__('publisher')
+    def __init__(self, name):
+        super().__init__(name)  # Use a unique node name
         self.publish_initial_pose = self.create_publisher(PoseWithCovarianceStamped, '/initialpose', 10)
         self.publish_goal_pose = self.create_publisher(PoseStamped, '/goal_pose', 10)
         self.publishAction = self.create_publisher(Twist, '/cmd_vel', 10)
 
-        #these are action clients to get my robot out of trouble after collision
+        # Action clients for recovering from collisions
         self.backup_client = ActionClient(self, BackUp, '/backup')
         self.spin_client = ActionClient(self, Spin, '/spin')
 
-        #services to clear the global and the local costmap:
+        # Services to clear the global and local costmaps
         self.local_costmap_clear_client = self.create_client(ClearEntireCostmap, '/local_costmap/clear_entirely_local_costmap')
         self.global_costmap_clear_client = self.create_client(ClearEntireCostmap, '/global_costmap/clear_entirely_global_costmap')
-        
+
         # Ensure service servers are available
         self.local_costmap_clear_client.wait_for_service(timeout_sec=5.0)
         self.global_costmap_clear_client.wait_for_service(timeout_sec=5.0)
@@ -116,23 +109,21 @@ class Publisher(Node):
         self.publishAction.publish(msg)
 
     def send_initial_pose(self, pose):
-        # self.get_logger().info("SENDING THE INTIIAL POSE NOW MAKE SURE THE PLAY BUTTON HAS BEEN PRESSED")
         initialPose_pose = PoseWithCovarianceStamped()
         initialPose_pose.header.stamp.sec = 0
         initialPose_pose.header.stamp.nanosec = 0
         initialPose_pose.header.frame_id = "map"
         initialPose_pose.pose.pose = pose
         self.publish_initial_pose.publish(initialPose_pose)
-        
+
     def send_goal_pose(self, pose):
-        # self.get_logger().info("SENDING THE GOAL POSE NOW MAKE SURE THE PLAY BUTTON HAS BEEN PRESSED")
         goalPose_pose = PoseStamped()
         goalPose_pose.header.stamp.sec = 0
         goalPose_pose.header.stamp.nanosec = 0
         goalPose_pose.header.frame_id = "map"
         goalPose_pose.pose = pose
         self.publish_goal_pose.publish(goalPose_pose)
-    
+
     def clear_local_costmap(self):
         self.get_logger().info("Clearing local costmap...")
         future = self.local_costmap_clear_client.call_async(ClearEntireCostmap.Request())
@@ -151,14 +142,29 @@ class Publisher(Node):
         else:
             self.get_logger().error(f"Failed to clear global costmap: {future.exception()}")
 
+
 class CustomGymnasiumEnvNav2(gym.Env):
-    def __init__(self):
+    def __init__(self, pubName = "Publisher", subName = "Subscriber"):
         super(CustomGymnasiumEnvNav2, self).__init__()
+
         if not rclpy.ok():  # Check if rclpy has already been initialized
             rclpy.init()   
+
+              #define the subcriber and publisher nodes
+        self.subscribeNode = Subscriber(subName)
+        self.publishNode = Publisher(pubName)
+
+        self.executor = MultiThreadedExecutor()
+        self.executor.add_node(self.subscribeNode)
+        self.executor.add_node(self.publishNode)
+
+        # Start spinning the executor in a separate thread
+        self.spin_thread = threading.Thread(target=self._spin, daemon=True)
+        self.spin_thread.start()
+
+
         self.counter = 0
         self.episode_length = 4000
-        #inititalise variables
 
         self.csv_file = "./reward_log.csv"
         with open(self.csv_file, mode='w') as f:
@@ -189,16 +195,11 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.collision = False
         self.pathArrayConverted = []
         self.obstacleAngle = None
-
         self.closestPathPointIndex  = 0
         self.closestPathDistance = 0
 
         #this is the param for how many poses ahead the path we look to find the path angle
         self.lookAheadDist = 40 
-
-        #define the subcriber and publisher nodes
-        self.subscribeNode = Subscriber()
-        self.publishNode = Publisher()
 
         #define the target pose for training
         self.target_pose = None
@@ -219,8 +220,11 @@ class CustomGymnasiumEnvNav2(gym.Env):
 
         # Define action and observation space
         self.action_space = spaces.Box(low=-3.14, high=3.14, shape=(2,), dtype=np.float32)
-  
         self.observation_space = spaces.Box(low=-100, high=100, shape=(3*640 + 10,), dtype=np.float32)
+    
+    def _spin(self):
+        # Spin using the MultiThreadedExecutor
+        self.executor.spin()
        
 
     def _initialise(self):
@@ -417,6 +421,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
         pass
 
     def close(self):
+        self.executor.shutdown()
         self.subscribeNode.destroy_node()
         self.publishNode.destroy_node()
         rclpy.shutdown()
