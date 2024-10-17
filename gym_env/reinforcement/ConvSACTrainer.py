@@ -48,11 +48,11 @@ def main():
     os.makedirs(log_dir, exist_ok=True)
 
     # Set up logger
-    logger_kwargs = setup_logger_kwargs("SAC_Nav2", log_dir, 0)
+    logger_kwargs = setup_logger_kwargs("SAC_Nav2_2", log_dir, 0)
     #this is where the results are
     results_dir = logger_kwargs["output_dir"]
 
-    # Train the model using Spinning Up's SAC
+    # # Train the model using Spinning Up's SAC
     sac(env_fn=lambda: CustomGymnasiumEnvNav2(),logger_kwargs=logger_kwargs)
     
     # Plot the results    

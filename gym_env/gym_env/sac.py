@@ -167,7 +167,7 @@ def sac(env_fn, actor_critic=MLPActorCritic, ac_kwargs=dict(), seed=0,
             while not(d or (ep_len == max_ep_len)):
                 # Take deterministic actions at test time 
                 o = torch.as_tensor(o, dtype=torch.float32, device=device)
-                o, r, d, _ = test_env.step(get_action(o, True).cpu().numpy())
+                o, r, d, _ = test_env.step(get_action(o, True))
                 ep_ret += r
                 ep_len += 1
             logger.store(TestEpRet=ep_ret, TestEpLen=ep_len)
@@ -228,7 +228,7 @@ def sac(env_fn, actor_critic=MLPActorCritic, ac_kwargs=dict(), seed=0,
 
             # Save model
             if (epoch % save_freq == 0) or (epoch == epochs):
-                logger.save_state({'env': env}, None)
+                logger.save_state({'agent': ac}, None)
 
             # Test the performance of the deterministic version of the agent.
             test_agent()

@@ -165,8 +165,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.csv_file = "./reward_log.csv"
         with open(self.csv_file, mode='w') as f:
             writer = csv.writer(f)
-            writer.writerow(['TimeStep', 'HeadingPenalty', 'DistanceReward', 'ObstaclePenalty', 'LinearSpeedReward', 'AngularPenalty', 'PathDeviationPenalty', 'OverallProgress', 'TotalReward'])
-
+            writer.writerow(['TimeStep', 'HeadingError', 'ChangeInDistance', 'ClosestObstacle', 'LinearSpeed', 'AngularPenalty', 'PathDeviation', 'DistanceToGoal', 'TotalReward'])
         #reward components
         self.heading_penalty = 0
         self.distance_reward = 0
@@ -179,10 +178,8 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.overall_progress_reward = 0
 
 
-
-
         #these are all the intermediary variables used to create the state and the reward for the agent
-        self.pathAngle = None
+        self.pathAngle = -1
         self.lastDistanceToTarget = None
         self.newDistanceToTarget = None
         self.changeInDistanceToTarget = 0
@@ -233,7 +230,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.lookAheadPoint = None
         self.pathArrayConverted = []
         self.collision = False
-        self.pathAngle = None
+        self.pathAngle = -1
         self.lastDistanceToTarget = None
         self.newDistanceToTarget = None
         self.changeInDistanceToTarget = 0
@@ -613,8 +610,8 @@ class CustomGymnasiumEnvNav2(gym.Env):
         # Append the reward components to the CSV file at each time step
         with open(self.csv_file, mode='a') as f:
             writer = csv.writer(f)
-            writer.writerow([self.counter, self.heading_penalty, self.distance_reward, self.obstacle_penalty,
-                             self.linear_speed_reward, self.angular_penalty, self.path_deviation_penalty, self.overall_progress_reward, self.reward])
+            writer.writerow([self.counter, self.pathAngle, self.changeInDistanceToTarget, self.closestObstacle,
+                             self.linearVelocity, self.angularVelocity, self.closestPathDistance, self.newDistanceToTarget, self.reward])
 
 
 
