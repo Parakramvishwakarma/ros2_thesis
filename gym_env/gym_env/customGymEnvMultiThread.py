@@ -81,7 +81,6 @@ class Subscriber(Node):
         self.speed_data = msg.twist.twist
 
     def path_callback(self, msg):
-        self.get_logger().info(f"New Path Received {len(msg.poses)}")
         self.path_data = [(pose.pose.position.x, pose.pose.position.y) for pose in msg.poses]
 
     def pose_callback(self, msg):
@@ -115,7 +114,6 @@ class Publisher(Node):
         goalPose_pose.header.frame_id = "map"
         goalPose_pose.pose = pose
         self.publish_goal_pose.publish(goalPose_pose)
-        self.get_logger().info(f"Sent Target Pose")
 
     # Asynchronous costmap clearing without blocking
     def clear_local_costmap(self):
@@ -275,9 +273,9 @@ class CustomGymnasiumEnvNav2(gym.Env):
     def step(self, action):
         #the function includes a step counter to keep track of terminal //..condition
         self.counter += 1
-        linear_vel = action[0]
-        angular_vel = action[1]
-        self.subscribeNode.get_logger().info(f"Action: {linear_vel} , {angular_vel}")
+        linear_vel = round(action[0],3)
+        angular_vel = round(action[1], 3)
+        
         #we need to make sure we initialise the data vars before the action is sent
         self._initialiseDataVars()
         self.publishNode.sendAction(linear_vel, angular_vel) #send action from the model
@@ -422,7 +420,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
             if (self.scan_data):
                 self._roundLidar()
                 self.closestObstacle = min(self.scan_data.ranges)
-                if self.closestObstacle > 0.75:
+                if self.closestObstacle > 1:
                     self.collision = False
                     self.subscribeNode.get_logger().info("Obstacle Not in Range anymore")
                 else:
@@ -477,8 +475,8 @@ class CustomGymnasiumEnvNav2(gym.Env):
             self.subscribeNode.get_logger().info("TERMINATED - COLLISION WITH OBSTACLE")
 
         self.reward = round(total_reward,3)
-        self.subscribeNode.get_logger().info(f"obs: {self.closestObstacle}, heading: {self.pathAngle}, dist: {self.newDistanceToTarget}, path_dev: {self.closestPathDistance} v: {self.linearVelocity} w: {self.angularVelocity}")
-        self.subscribeNode.get_logger().info(f"The total reward is {self.reward}")
+        # self.subscribeNode.get_logger().info(f"obs: {self.closestObstacle}, heading: {self.pathAngle}, dist: {self.newDistanceToTarget}, path_dev: {self.closestPathDistance} v: {self.linearVelocity} w: {self.angularVelocity}")
+        # self.subscribeNode.get_logger().info(f"The total reward is {self.reward}")
         self._log_rewards_to_csv()
         return total_reward
     
