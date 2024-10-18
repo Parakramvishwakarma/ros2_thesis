@@ -220,6 +220,8 @@ class CustomGymnasiumEnvNav2(gym.Env):
 
         self.lookAheadPointIndex = self.lookAheadDist
         self.lookAheadPoint = None
+        self.lastPose = None
+        
 
         # Define action and observation space
         self.action_space = spaces.Box(low=-3.14, high=3.14, shape=(2,), dtype=np.float32)
@@ -266,6 +268,9 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.currentPose = None
         self.scan_data = None
         self.speed_twist = None
+        self.subscribeNode.scan_data = None
+        self.subscribeNode.speed_data = None
+        self.subscribeNode.pose_data = None
 
 
     def step(self, action):
@@ -278,15 +283,12 @@ class CustomGymnasiumEnvNav2(gym.Env):
 
         rclpy.spin_once(self.publishNode, timeout_sec=1.0)
         # Wait for new scan and pose data
-        # time.sleep(0.5)
-        rclpy.spin_once(self.subscribeNode, timeout_sec=1.0)
+        time.sleep(0.75)
 
-        # self._initialiseDataVars()
+        self._initialiseDataVars()
 
-        self.scan_data = self.subscribeNode.scan_data
-        self.speed_twist = self.subscribeNode.speed_data
-        self.currentPose  = self.subscribeNode.pose_data
-        self.pathArray = self.subscribeNode.path_data
+        self._getObservations()
+
      
         #get udpated observations from odometry
         if ( self.scan_data and self.speed_twist and self.currentPose and self.pathArray):
@@ -386,6 +388,11 @@ class CustomGymnasiumEnvNav2(gym.Env):
             self.target_pose.position.z = 0.0
             self.target_pose.orientation.w = 1.0
         else:
+            self.currentPose = Pose()
+            self.currentPose.position.x = 0.0
+            self.currentPose.position.y = 0.0
+            self.currentPose.position.z = 0.0
+            self.currentPose.orientation.w = 1.0
             self._setNewTargetAndInitial()
 
         self.publishNode.send_goal_pose(self.target_pose)
@@ -393,13 +400,8 @@ class CustomGymnasiumEnvNav2(gym.Env):
         rclpy.spin_once(self.publishNode, timeout_sec=0.5)
         time.sleep(3)
         #get inintial observations
-        rclpy.spin_once(self.subscribeNode, timeout_sec=0.5)
 
-        self.scan_data = self.subscribeNode.scan_data
-        self.speed_twist = self.subscribeNode.speed_data
-        self.pathArray = self.subscribeNode.path_data
-        self.currentPose  = self.subscribeNode.pose_data
-
+        self._getObservations()
         #get udpated observations from odometry
         if (self.scan_data and self.speed_twist and self.currentPose and self.pathArray):
             self._findRelativeGoal()
@@ -421,6 +423,29 @@ class CustomGymnasiumEnvNav2(gym.Env):
         else:
             observation = self.observation_space.sample()  # Return a random observation within space
         return observation
+    
+    def _getObservations(self, reset = False):
+        count = 0
+        while (self.scan_data is None or self.speed_twist is None or self.currentPose is None or self.pathArray is None):
+            # Get the latest data from the Subscriber class
+            rclpy.spin_once(self.subscribeNode, timeout_sec=0.5)
+
+            self.speed_twist = self.subscribeNode.speed_data
+            self.pathArray = self.subscribeNode.path_data
+            self.currentPose = self.subscribeNode.pose_data
+            self.scan_data = self.subscribeNode.scan_data
+            if self.scan_data is None:
+                self.subscribeNode.get_logger().info("Scan is missing")
+            if self.speed_twist is None:
+                self.subscribeNode.get_logger().info("speeed is missing")
+            if self.currentPose is None:
+                count += 1
+                if count == 5: 
+                        if self.lastPose: self.currentPose = self.lastPose
+                self.subscribeNode.get_logger().info("pose is missing")
+            if self.pathArray is None:
+                self.subscribeNode.get_logger().info(f"path is missing")
+            time.sleep(0.2)  # Small sleep to avoid busy-waiting
     
     def render(self, mode='human'):
         pass

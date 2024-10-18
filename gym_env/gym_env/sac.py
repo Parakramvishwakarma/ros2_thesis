@@ -32,7 +32,8 @@ def sac(env_fn, actor_critic=MLPActorCritic, ac_kwargs=dict(), seed=0,
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")  #
 
-    env, test_env = env_fn(), env_fn(pubName = "testPub", subName = "testSub")
+    # env, test_env = env_fn(), env_fn_test()
+    env = env_fn()
     obs_dim = env.observation_space.shape
     act_dim = env.action_space.shape[0]
 
@@ -161,16 +162,16 @@ def sac(env_fn, actor_critic=MLPActorCritic, ac_kwargs=dict(), seed=0,
         o = torch.as_tensor(o, dtype=torch.float32, device=device)
         return ac.act(o, deterministic)
     
-    def test_agent():
-        for j in range(num_test_episodes):
-            o, d, ep_ret, ep_len = test_env.reset(), False, 0, 0
-            while not(d or (ep_len == max_ep_len)):
-                # Take deterministic actions at test time 
-                o = torch.as_tensor(o, dtype=torch.float32, device=device)
-                o, r, d, _ = test_env.step(get_action(o, True))
-                ep_ret += r
-                ep_len += 1
-            logger.store(TestEpRet=ep_ret, TestEpLen=ep_len)
+    # def test_agent():
+    #     for j in range(num_test_episodes):
+    #         o, d, ep_ret, ep_len = test_env.reset(), False, 0, 0
+    #         while not(d or (ep_len == max_ep_len)):
+    #             # Take deterministic actions at test time 
+    #             o = torch.as_tensor(o, dtype=torch.float32, device=device)
+    #             o, r, d, _ = test_env.step(get_action(o, True))
+    #             ep_ret += r
+    #             ep_len += 1
+    #         logger.store(TestEpRet=ep_ret, TestEpLen=ep_len)
 
     # Prepare for interaction with environment
     total_steps = steps_per_epoch * epochs
@@ -231,7 +232,7 @@ def sac(env_fn, actor_critic=MLPActorCritic, ac_kwargs=dict(), seed=0,
                 logger.save_state({'agent': ac}, None)
 
             # Test the performance of the deterministic version of the agent.
-            test_agent()
+            # test_agent()
 
             # Log info about epoch
             logger.log_tabular('Epoch', epoch)

@@ -68,7 +68,11 @@ class Subscriber(Node):
         self.scan_data = None
         self.speed_data = None
         self.path_data = None
-        self.pose_data = None
+        self.pose_data = Pose()
+        self.pose_data.position.x = 0.0
+        self.pose_data.position.y = 0.0
+        self.pose_data.position.z = 0.0
+        self.pose_data.orientation.w = 1.0
 
     # Callback methods to update data
     def scan_callback(self, msg):
@@ -78,6 +82,7 @@ class Subscriber(Node):
         self.speed_data = msg.twist.twist
 
     def path_callback(self, msg):
+        self.get_logger().info(f"New Path Received {len(msg.poses)}")
         self.path_data = [(pose.pose.position.x, pose.pose.position.y) for pose in msg.poses]
 
     def pose_callback(self, msg):
@@ -193,13 +198,15 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.angularVelocity = None
         self.lidarTracking = np.zeros((3, 640), dtype=np.float32)
         self.collision = False
-        self.pathArrayConverted = []
         self.obstacleAngle = None
         self.closestPathPointIndex  = 0
         self.closestPathDistance = 0
+        self.lastPose = None
 
         #this is the param for how many poses ahead the path we look to find the path angle
         self.lookAheadDist = 40 
+        self.lookAheadPointIndex = self.lookAheadDist
+        self.lookAheadPoint = None
 
         #define the target pose for training
         self.target_pose = None
@@ -212,11 +219,12 @@ class CustomGymnasiumEnvNav2(gym.Env):
         #observation data variables from the environment
         self.scan_data = None
         self.speed_twist = None
-        self.currentPose = None
         self.pathArray = None
-
-        self.lookAheadPointIndex = self.lookAheadDist
-        self.lookAheadPoint = None
+        self.currentPose = Pose()
+        self.currentPose.position.x = 0.0
+        self.currentPose.position.y = 0.0
+        self.currentPose.position.z = 0.0
+        self.currentPose.orientation.w = 1.0
 
         # Define action and observation space
         self.action_space = spaces.Box(low=-3.14, high=3.14, shape=(2,), dtype=np.float32)
@@ -230,7 +238,6 @@ class CustomGymnasiumEnvNav2(gym.Env):
     def _initialise(self):
         self.lookAheadPointIndex = 0
         self.lookAheadPoint = None
-        self.pathArrayConverted = []
         self.collision = False
         self.pathAngle = -1
         self.lastDistanceToTarget = None
@@ -243,14 +250,8 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.lidarTracking = np.zeros((3, 640), dtype=np.float32)
         self.counter = 0
         self.obstacleAngle = None
-        #these are data hodling variables
-        self.scan_data = None
-        self.speed_twist = None
-        self.currentPose = None
-        self.pathArray = None
         self.closestPathPointIndex  = 0
         self.closestPathDistance = 0
-
         #reward components
         self.heading_penalty = 0
         self.distance_reward = 0
@@ -278,19 +279,16 @@ class CustomGymnasiumEnvNav2(gym.Env):
         angular_vel = action[1]
         #we need to make sure we initialise the data vars before the action is sent
         self._initialiseDataVars()
-
         self.publishNode.sendAction(linear_vel, angular_vel) #send action from the model
-
-        rclpy.spin_once(self.publishNode, timeout_sec=1.0)
-
+        #wait for action to happen
+        time.sleep(0.5)
         #get data
         self._getObservations()
-     
         #get udpated observations from odometry
         if ( self.scan_data and self.speed_twist and self.currentPose and self.pathArray):
             if self.counter ==1:
                 self.subscribeNode.get_logger().info("Running New Episode")
-            
+            self.lastPose = self.currentPose
             #find the pose of the target in the global frame
             self._findRelativeGoal()
             
@@ -340,7 +338,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
     
 
     def reset(self, seed=None, options=None):
-        super().reset(seed=seed, options=options)    
+        super().reset(seed=seed, options=options) 
         #check if we have collided with an obstacle if so then run the backup and spin
         while self.collision:
             # self._backup_and_spin()
@@ -357,7 +355,6 @@ class CustomGymnasiumEnvNav2(gym.Env):
                 self.subscribeNode.get_logger().info(f"Obstacle on the right {self.obstacleAngle}")
                 self.publishNode.sendAction(0.0, 3.0)
             time.sleep(2)
-            rclpy.spin_once(self.subscribeNode, timeout_sec=1.0)
             self.scan_data = self.subscribeNode.scan_data
             if (self.scan_data):
                 self._roundLidar()
@@ -368,30 +365,30 @@ class CustomGymnasiumEnvNav2(gym.Env):
                 else:
                     self.obstacleAngle = self.scan_data.ranges.index(self.closestObstacle) * 0.5625
                     self.subscribeNode.get_logger().info(f"Still in collision zone!!!!!! New closest: {min(self.scan_data.ranges)}")
-                
-        #reset variables
-        self._initialise()
 
         #reset the costmaps
         self.publishNode.clear_local_costmap()
         self.publishNode.clear_global_costmap()
         self.publishNode.sendAction(0.0, 0.0)
-        time.sleep(5)
+
         if self.target_pose == None:
+            #this case is for first ever episode
             self.target_pose = Pose()
             self.target_pose.position.x = 4.0
             self.target_pose.position.y = 2.5
             self.target_pose.position.z = 0.0
             self.target_pose.orientation.w = 1.0
         else:
+            #reset variables
+            self._initialise()
             self._setNewTargetAndInitial()
 
-        self.subscribeNode.pose_data = None
-        self.pathArray = None
-
         self.publishNode.send_goal_pose(self.target_pose)
-        rclpy.spin_once(self.publishNode, timeout_sec=1.0)
         
+        # self.executor.shutdown()
+        # self.executor.spin()
+
+        time.sleep(2)
         #get inintial observations
         self._getObservations()
 
@@ -483,15 +480,26 @@ class CustomGymnasiumEnvNav2(gym.Env):
         return total_reward
     
 
-    def _getObservations(self):
-        # Wait for the required data to be available
+    def _getObservations(self, reset = False):
+        count = 0
         while (self.scan_data is None or self.speed_twist is None or self.currentPose is None or self.pathArray is None):
             # Get the latest data from the Subscriber class
-            self.scan_data = self.subscribeNode.scan_data
             self.speed_twist = self.subscribeNode.speed_data
             self.pathArray = self.subscribeNode.path_data
             self.currentPose = self.subscribeNode.pose_data
-            time.sleep(0.1)  # Small sleep to avoid busy-waiting
+            self.scan_data = self.subscribeNode.scan_data
+            if self.scan_data is None:
+                self.subscribeNode.get_logger().info("Scan is missing")
+            if self.speed_twist is None:
+                self.subscribeNode.get_logger().info("speeed is missing")
+            if self.currentPose is None:
+                count += 1
+                if count == 3: 
+                        if self.lastPose: self.currentPose = self.lastPose
+                self.subscribeNode.get_logger().info("pose is missing")
+            if self.pathArray is None:
+                self.subscribeNode.get_logger().info(f"path is missing")
+            time.sleep(0.2)  # Small sleep to avoid busy-waiting
 
 
     def _checkTerminalConditions(self): 

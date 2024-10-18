@@ -2,7 +2,7 @@ import numpy as np
 import os
 import torch
 import gym
-from gym_env.custom_gym_env_nav2_controller import CustomGymnasiumEnvNav2
+from gym_env.customGymEnvMultiThread import CustomGymnasiumEnvNav2
 import matplotlib
 matplotlib.use('Agg')  # Use non-GUI backend for plotting
 import matplotlib.pyplot as plt
