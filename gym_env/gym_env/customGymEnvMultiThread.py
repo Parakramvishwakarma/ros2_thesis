@@ -13,7 +13,6 @@ from rclpy.qos import qos_profile_sensor_data
 from geometry_msgs.msg import Pose, PoseWithCovarianceStamped, Twist, PoseStamped, Point
 from nav_msgs.msg import Odometry, Path, OccupancyGrid
 from map_msgs.msg import OccupancyGridUpdate
-from nav2_msgs.action import BackUp, Spin
 from rclpy.action import ActionClient
 import time
 import threading
@@ -95,10 +94,6 @@ class Publisher(Node):
         self.publish_goal_pose = self.create_publisher(PoseStamped, '/goal_pose', 10)
         self.publishAction = self.create_publisher(Twist, '/cmd_vel', 10)
 
-        # Action clients for recovering from collisions
-        self.backup_client = ActionClient(self, BackUp, '/backup')
-        self.spin_client = ActionClient(self, Spin, '/spin')
-
         # Services to clear the global and local costmaps
         self.local_costmap_clear_client = self.create_client(ClearEntireCostmap, '/local_costmap/clear_entirely_local_costmap')
         self.global_costmap_clear_client = self.create_client(ClearEntireCostmap, '/global_costmap/clear_entirely_global_costmap')
@@ -113,14 +108,6 @@ class Publisher(Node):
         msg.angular.z = float(angularVel)
         self.publishAction.publish(msg)
 
-    def send_initial_pose(self, pose):
-        initialPose_pose = PoseWithCovarianceStamped()
-        initialPose_pose.header.stamp.sec = 0
-        initialPose_pose.header.stamp.nanosec = 0
-        initialPose_pose.header.frame_id = "map"
-        initialPose_pose.pose.pose = pose
-        self.publish_initial_pose.publish(initialPose_pose)
-
     def send_goal_pose(self, pose):
         goalPose_pose = PoseStamped()
         goalPose_pose.header.stamp.sec = 0
@@ -128,24 +115,19 @@ class Publisher(Node):
         goalPose_pose.header.frame_id = "map"
         goalPose_pose.pose = pose
         self.publish_goal_pose.publish(goalPose_pose)
+        self.get_logger().info(f"Sent Target Pose")
+
 
     def clear_local_costmap(self):
         self.get_logger().info("Clearing local costmap...")
         future = self.local_costmap_clear_client.call_async(ClearEntireCostmap.Request())
         rclpy.spin_until_future_complete(self, future)
-        if future.result() is not None:
-            self.get_logger().info("Successfully cleared local costmap.")
-        else:
-            self.get_logger().error(f"Failed to clear local costmap: {future.exception()}")
-
+        
     def clear_global_costmap(self):
         self.get_logger().info("Clearing global costmap...")
         future = self.global_costmap_clear_client.call_async(ClearEntireCostmap.Request())
         rclpy.spin_until_future_complete(self, future)
-        if future.result() is not None:
-            self.get_logger().info("Successfully cleared global costmap.")
-        else:
-            self.get_logger().error(f"Failed to clear global costmap: {future.exception()}")
+
 
 
 class CustomGymnasiumEnvNav2(gym.Env):
@@ -167,7 +149,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.spin_thread = threading.Thread(target=self._spin, daemon=True)
         self.spin_thread.start()
 
-
+        #episode counter and lenght variables
         self.counter = 0
         self.episode_length = 4000
 
@@ -185,7 +167,6 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.goal_reached_bonus = 0
         self.collision_penalty = 0
         self.overall_progress_reward = 0
-
 
         #these are all the intermediary variables used to create the state and the reward for the agent
         self.pathAngle = -1
@@ -234,7 +215,6 @@ class CustomGymnasiumEnvNav2(gym.Env):
         # Spin using the MultiThreadedExecutor
         self.executor.spin()
        
-
     def _initialise(self):
         self.lookAheadPointIndex = 0
         self.lookAheadPoint = None
@@ -277,6 +257,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.counter += 1
         linear_vel = action[0]
         angular_vel = action[1]
+        self.subscribeNode.get_logger().info(f"Action: {linear_vel} , {angular_vel}")
         #we need to make sure we initialise the data vars before the action is sent
         self._initialiseDataVars()
         self.publishNode.sendAction(linear_vel, angular_vel) #send action from the model
@@ -340,35 +321,11 @@ class CustomGymnasiumEnvNav2(gym.Env):
     def reset(self, seed=None, options=None):
         super().reset(seed=seed, options=options) 
         #check if we have collided with an obstacle if so then run the backup and spin
-        while self.collision:
-            # self._backup_and_spin()
-            if self.obstacleAngle >=135 and self.obstacleAngle <= 225:
-                self.subscribeNode.get_logger().info(f"Running Backup Manouvre obstacle at front {self.obstacleAngle}")
-                self.publishNode.sendAction(-5.0, 0.0)
-            elif self.obstacleAngle > 225 and self.obstacleAngle <= 285:
-                self.subscribeNode.get_logger().info(f"Obstacle on the left {self.obstacleAngle}")
-                self.publishNode.sendAction(0.0, -3.0)
-            elif self.obstacleAngle < 75 or self.obstacleAngle > 285:
-                self.subscribeNode.get_logger().info(f"Obstacle at the back running front Manouvre {self.obstacleAngle}")
-                self.publishNode.sendAction(5.0, 0.0)
-            elif self.obstacleAngle >=75 or self.obstacleAngle < 135 :
-                self.subscribeNode.get_logger().info(f"Obstacle on the right {self.obstacleAngle}")
-                self.publishNode.sendAction(0.0, 3.0)
-            time.sleep(2)
-            self.scan_data = self.subscribeNode.scan_data
-            if (self.scan_data):
-                self._roundLidar()
-                self.closestObstacle = min(self.scan_data.ranges)
-                if self.closestObstacle > 0.75:
-                    self.collision = False
-                    self.subscribeNode.get_logger().info("Obstacle Not in Range anymore")
-                else:
-                    self.obstacleAngle = self.scan_data.ranges.index(self.closestObstacle) * 0.5625
-                    self.subscribeNode.get_logger().info(f"Still in collision zone!!!!!! New closest: {min(self.scan_data.ranges)}")
-
+        if self.collision:
+            self._handleCollision()
         #reset the costmaps
-        self.publishNode.clear_local_costmap()
-        self.publishNode.clear_global_costmap()
+        # self.publishNode.clear_local_costmap()
+        # self.publishNode.clear_global_costmap()
         self.publishNode.sendAction(0.0, 0.0)
 
         if self.target_pose == None:
@@ -426,6 +383,33 @@ class CustomGymnasiumEnvNav2(gym.Env):
     def _setNewTargetAndInitial(self):
         self.target_pose.position.x = float(np.random.randint(-4,14))
         self.target_pose.position.y = float(np.random.randint(-9, 9))
+
+    def _handleCollision(self):
+        while self.collision:
+            if self.obstacleAngle >=135 and self.obstacleAngle <= 225:
+                self.subscribeNode.get_logger().info(f"Running Backup Manouvre obstacle at front {self.obstacleAngle}")
+                self.publishNode.sendAction(-5.0, 0.0)
+            elif self.obstacleAngle > 225 and self.obstacleAngle <= 285:
+                self.subscribeNode.get_logger().info(f"Obstacle on the left {self.obstacleAngle}")
+                self.publishNode.sendAction(0.0, -3.0)
+            elif self.obstacleAngle < 75 or self.obstacleAngle > 285:
+                self.subscribeNode.get_logger().info(f"Obstacle at the back running front Manouvre {self.obstacleAngle}")
+                self.publishNode.sendAction(5.0, 0.0)
+            elif self.obstacleAngle >=75 or self.obstacleAngle < 135 :
+                self.subscribeNode.get_logger().info(f"Obstacle on the right {self.obstacleAngle}")
+                self.publishNode.sendAction(0.0, 3.0)
+            time.sleep(2)
+            self.scan_data = self.subscribeNode.scan_data
+            if (self.scan_data):
+                self._roundLidar()
+                self.closestObstacle = min(self.scan_data.ranges)
+                if self.closestObstacle > 0.75:
+                    self.collision = False
+                    self.subscribeNode.get_logger().info("Obstacle Not in Range anymore")
+                else:
+                    self.obstacleAngle = self.scan_data.ranges.index(self.closestObstacle) * 0.5625
+                    self.subscribeNode.get_logger().info(f"Still in collision zone!!!!!! New closest: {min(self.scan_data.ranges)}")
+
 
     def _calculateReward(self):
         # Coefficients for each reward component
