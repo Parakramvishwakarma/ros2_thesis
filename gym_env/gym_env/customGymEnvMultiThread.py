@@ -117,17 +117,37 @@ class Publisher(Node):
         self.publish_goal_pose.publish(goalPose_pose)
         self.get_logger().info(f"Sent Target Pose")
 
-
+    # Asynchronous costmap clearing without blocking
     def clear_local_costmap(self):
-        self.get_logger().info("Clearing local costmap...")
+        self.get_logger().info("Clearing local costmap asynchronously...")
         future = self.local_costmap_clear_client.call_async(ClearEntireCostmap.Request())
-        rclpy.spin_until_future_complete(self, future)
-        
-    def clear_global_costmap(self):
-        self.get_logger().info("Clearing global costmap...")
-        future = self.global_costmap_clear_client.call_async(ClearEntireCostmap.Request())
-        rclpy.spin_until_future_complete(self, future)
+        future.add_done_callback(self.local_costmap_clear_callback)
 
+    def clear_global_costmap(self):
+        self.get_logger().info("Clearing global costmap asynchronously...")
+        future = self.global_costmap_clear_client.call_async(ClearEntireCostmap.Request())
+        future.add_done_callback(self.global_costmap_clear_callback)
+
+    # Callbacks to handle the result of the asynchronous service call
+    def local_costmap_clear_callback(self, future):
+        try:
+            result = future.result()
+            if result is not None:
+                self.get_logger().info("Successfully cleared local costmap.")
+            else:
+                self.get_logger().info("Failed to clear local costmap.")
+        except Exception as e:
+            self.get_logger().error(f"Exception in clearing local costmap: {str(e)}")
+
+    def global_costmap_clear_callback(self, future):
+        try:
+            result = future.result()
+            if result is not None:
+                self.get_logger().info("Successfully cleared global costmap.")
+            else:
+                self.get_logger().info("Failed to clear global costmap.")
+        except Exception as e:
+            self.get_logger().error(f"Exception in clearing global costmap: {str(e)}")
 
 
 class CustomGymnasiumEnvNav2(gym.Env):
@@ -262,7 +282,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self._initialiseDataVars()
         self.publishNode.sendAction(linear_vel, angular_vel) #send action from the model
         #wait for action to happen
-        time.sleep(0.5)
+        time.sleep(0.75)
         #get data
         self._getObservations()
         #get udpated observations from odometry
@@ -324,9 +344,10 @@ class CustomGymnasiumEnvNav2(gym.Env):
         if self.collision:
             self._handleCollision()
         #reset the costmaps
-        # self.publishNode.clear_local_costmap()
-        # self.publishNode.clear_global_costmap()
+ 
         self.publishNode.sendAction(0.0, 0.0)
+        self.publishNode.clear_local_costmap()
+        self.publishNode.clear_global_costmap()
 
         if self.target_pose == None:
             #this case is for first ever episode
@@ -341,9 +362,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
             self._setNewTargetAndInitial()
 
         self.publishNode.send_goal_pose(self.target_pose)
-        
-        # self.executor.shutdown()
-        # self.executor.spin()
+        rclpy.spin_once(self.publishNode, timeout_sec=0.1)
 
         time.sleep(2)
         #get inintial observations
