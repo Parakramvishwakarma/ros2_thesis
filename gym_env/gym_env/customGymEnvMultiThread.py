@@ -19,6 +19,7 @@ import threading
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.qos import QoSProfile, QoSDurabilityPolicy, QoSReliabilityPolicy, QoSHistoryPolicy
 from builtin_interfaces.msg import Duration
+import random
 
 
 class Subscriber(Node):
@@ -167,6 +168,8 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.spin_thread = threading.Thread(target=self._spin, daemon=True)
         self.spin_thread.start()
 
+        self.ep_counter = 0
+
         #episode counter and lenght variables
         self.counter = 0
         self.episode_length = 4000
@@ -224,6 +227,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
         self.currentPose.position.y = 0.0
         self.currentPose.position.z = 0.0
         self.currentPose.orientation.w = 1.0
+        
 
         # Define action and observation space
         self.action_space = spaces.Box(low=-3.14, high=3.14, shape=(2,), dtype=np.float32)
@@ -301,7 +305,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
             self.lastDistanceToTarget = self.newDistanceToTarget
             self.newDistanceToTarget = self._getDistance()
             if self.lastDistanceToTarget:
-                self.changeInDistanceToTarget = self.newDistanceToTarget - self.lastDistanceToTarget
+                self.changeInDistanceToTarget = round(self.lastDistanceToTarget - self.newDistanceToTarget,2)
 
             self._find_closest_path_point_and_distance() #this will update the class variables for closets point index and distance
             self.pathAngle = self._findPathAngle()
@@ -338,6 +342,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed, options=options) 
+        self.ep_counter += 1
         #check if we have collided with an obstacle if so then run the backup and spin
         if self.collision:
             self._handleCollision()
@@ -398,34 +403,95 @@ class CustomGymnasiumEnvNav2(gym.Env):
         rclpy.shutdown()
 
     def _setNewTargetAndInitial(self):
-        self.target_pose.position.x = float(np.random.randint(-4,14))
-        self.target_pose.position.y = float(np.random.randint(-9, 9))
+        """
+        Sets a new target position based on the episode counter.
+        If ep_counter < 10: target is within 5 meters of the current position.
+        If 10 <= ep_counter <= 35: target is between 5 and 8 meters.
+        If ep_counter > 35: target can be anywhere on the map.
+        """
+        current_x = self.currentPose.position.x
+        current_y = self.currentPose.position.y
 
+        if self.ep_counter < 10:
+            # Set target within 5 meters from the current position
+            max_distance = 5.0
+        elif 10 <= self.ep_counter <= 35:
+            # Set target between 5 and 8 meters from the current position
+            min_distance = 5.0
+            max_distance = 8.0
+        else:
+            # Set target anywhere on the map
+            self.target_pose.position.x = float(np.random.randint(-4, 14))
+            self.target_pose.position.y = float(np.random.randint(-9, 9))
+            return
+
+        # Generate a random angle to determine the direction of the new target
+        angle = random.uniform(0, 2 * np.pi)
+        distance = random.uniform(0, max_distance) if self.ep_counter < 10 else random.uniform(min_distance, max_distance)
+
+        # Calculate the new target position
+        new_x = current_x + distance * np.cos(angle)
+        new_y = current_y + distance * np.sin(angle)
+
+        # Ensure the target stays within the map bounds
+        new_x = np.clip(new_x, -4, 14)
+        new_y = np.clip(new_y, -9, 9)
+
+        # Set the new target position
+        self.target_pose.position.x = new_x
+        self.target_pose.position.y = new_y
+        
     def _handleCollision(self):
+        max_attempts = 10  # Max attempts before introducing randomness
+        attempt_count = 0
+
         while self.collision:
-            if self.obstacleAngle >=135 and self.obstacleAngle <= 225:
-                self.subscribeNode.get_logger().info(f"Running Backup Manouvre obstacle at front {self.obstacleAngle}")
+            # Determine the maneuver based on obstacle angle
+            if self.obstacleAngle >= 135 and self.obstacleAngle <= 225:
+                self.subscribeNode.get_logger().info(f"Running Backup Maneuver; Obstacle at Front: {self.obstacleAngle}")
                 self.publishNode.sendAction(-5.0, 0.0)
             elif self.obstacleAngle > 225 and self.obstacleAngle <= 285:
-                self.subscribeNode.get_logger().info(f"Obstacle on the left {self.obstacleAngle}")
+                self.subscribeNode.get_logger().info(f"Obstacle on the Left: {self.obstacleAngle}")
                 self.publishNode.sendAction(0.0, -3.0)
             elif self.obstacleAngle < 75 or self.obstacleAngle > 285:
-                self.subscribeNode.get_logger().info(f"Obstacle at the back running front Manouvre {self.obstacleAngle}")
+                self.subscribeNode.get_logger().info(f"Obstacle at Back; Running Forward: {self.obstacleAngle}")
                 self.publishNode.sendAction(5.0, 0.0)
-            elif self.obstacleAngle >=75 or self.obstacleAngle < 135 :
-                self.subscribeNode.get_logger().info(f"Obstacle on the right {self.obstacleAngle}")
+            elif self.obstacleAngle >= 75 and self.obstacleAngle < 135:
+                self.subscribeNode.get_logger().info(f"Obstacle on the Right: {self.obstacleAngle}")
                 self.publishNode.sendAction(0.0, 3.0)
+
             time.sleep(2)
             self.scan_data = self.subscribeNode.scan_data
-            if (self.scan_data):
+
+            # Check if scan data is available to process
+            if self.scan_data:
                 self._roundLidar()
                 self.closestObstacle = min(self.scan_data.ranges)
-                if self.closestObstacle > 1:
+
+                # Check if the obstacle is no longer within range
+                if self.closestObstacle > 1 and (self.obstacleAngle < 90 or self.obstacleAngle > 270):
+                    self.collision = False
+                    self.subscribeNode.get_logger().info("Obstacle Not in Range anymore")
+                elif self.closestObstacle > 0.75 and (self.obstacleAngle >= 90 or self.obstacleAngle <= 270):
                     self.collision = False
                     self.subscribeNode.get_logger().info("Obstacle Not in Range anymore")
                 else:
+                    # Update the obstacle angle
                     self.obstacleAngle = self.scan_data.ranges.index(self.closestObstacle) * 0.5625
-                    self.subscribeNode.get_logger().info(f"Still in collision zone!!!!!! New closest: {min(self.scan_data.ranges)}")
+                    self.subscribeNode.get_logger().info(f"Still in Collision Zone! New Closest: {self.closestObstacle}")
+
+                    # Increment attempt count and add randomness if stuck
+                    attempt_count += 1
+                    if attempt_count >= max_attempts:
+                        self.subscribeNode.get_logger().info("Applying Random Maneuver to Escape Corner")
+                        self._apply_random_maneuver()
+                        attempt_count = 0  # Reset attempt count
+    def _apply_random_maneuver(self):
+        # Apply a random small rotation or movement
+        linear_velocity = random.uniform(-2.0, 2.0)
+        angular_velocity = random.uniform(-1.5, 1.5)
+        self.publishNode.sendAction(linear_velocity, angular_velocity)
+        time.sleep(1)  # Allow some time for the random maneuver
 
 
     def _calculateReward(self):
@@ -435,7 +501,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
         gamma = -3.0  # Penalty for proximity to obstacles
         roh = 0.2     # Reward for maintaining linear speed
         delta = -0.8  # Path deviation penalty
-        mu = -0.3     # Penalty for high angular velocity
+        mu = -1     # Penalty for high angular velocity
         goal_reached_bonus = 2000  # Large bonus for reaching the goal
         collision_penalty = -1500  # High penalty for collisions
 
@@ -446,7 +512,7 @@ class CustomGymnasiumEnvNav2(gym.Env):
         if self.lastDistanceToTarget is not None:
             self.distance_reward = beta * self.changeInDistanceToTarget
 
-        self.overall_progress_reward = 10 / (self.newDistanceToTarget + 0.1)
+        self.overall_progress_reward = 2 / (self.newDistanceToTarget + 0.1)
 
         self.obstacle_penalty = 0
         if self.newDistanceToTarget > 1:
@@ -455,7 +521,10 @@ class CustomGymnasiumEnvNav2(gym.Env):
     
         self.linear_speed_reward = roh * self.linearVelocity
 
-        self.angular_penalty = mu * abs(self.angularVelocity)
+        if abs(self.angularVelocity) > 0.25:
+            self.angular_penalty = mu * abs(self.angularVelocity)
+        else:
+            self.angular_penalty = 0
         
         self.path_deviation_penalty = delta * self.closestPathDistance
 
